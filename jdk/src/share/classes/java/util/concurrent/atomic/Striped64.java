@@ -144,6 +144,7 @@ abstract class Striped64 extends Number {
 
     /**
      * Table of cells. When non-null, size is a power of 2.
+     * 分散线程CAS争抢热点的哈希表，注意这个字段是用volatile的
      */
     transient volatile Cell[] cells;
 
