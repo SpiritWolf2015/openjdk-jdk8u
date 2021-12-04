@@ -41,7 +41,14 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * A package-local class holding common representation and mechanics
  * for classes supporting dynamic striping on 64bit values. The class
- * extends Number so that concrete subclasses must publicly do so.
+ * extends Number so that concrete subclasses must publicly do so.<br/>
+ * Striped64类的设计核心思路是通过内部的分散计算来避免线程CAS竞争，以空间换时间。<br/>
+ * base类似于AtomicInteger里面的value，在没有竞争的情况下，cells数组为null，
+ * 这时只使用base进行累加；而一旦发生竞争，cells数组就上场了。<br/>
+ * cells数组第一次初始化长度为2，以后每次扩容都变为原来的两倍，一直到cells数组的长度大于等于当前服务器CPU的核数。为什么呢？
+ * 同一时刻能持有CPU时间片去并发操作同一个内存地址的最大线程数最多也就是CPU的核数。<br/>
+ * 在存在线程争用的时候，每个线程被映射到cells[threadLocalRandomProbe & cells.length]位置的Cell元素，
+ * 该线程对value所做的累加操作就执行在对应的Cell元素的值上，最终相当于将线程绑定到cells中的某个Cell对象上。
  */
 @SuppressWarnings("serial")
 abstract class Striped64 extends Number {
@@ -142,20 +149,25 @@ abstract class Striped64 extends Number {
     /** Number of CPUS, to place bound on table size */
     static final int NCPU = Runtime.getRuntime().availableProcessors();
 
+    //基类Striped64内部3个重要成员：cells、base、cellsBusy，都是用volatile修饰的
     /**
      * Table of cells. When non-null, size is a power of 2.
-     * 分散线程CAS争抢热点的哈希表，注意这个字段是用volatile的
+     * 成员一：存放Cell的哈希表，大小为2的幂。用于分散线程CAS竞争.
      */
     transient volatile Cell[] cells;
-
     /**
      * Base value, used mainly when there is no contention, but also as
      * a fallback during table initialization races. Updated via CAS.
+     * 成员二：基础值
+     * 1.在没有竞争时会更新这个值
+     * 2.在cells初始化时，cells不可用，也会尝试通过CAS操作值累加到base字段
      */
     transient volatile long base;
-
     /**
      * Spinlock (locked via CAS) used when resizing and/or creating Cells.
+     * 成员三：自旋锁
+     * 通过CAS操作加锁，为0表示cells数组没有处于创建、扩容阶段，为1表示正在
+     * 创建或者扩展cells数组，不能进行新Cell元素的设置操作
      */
     transient volatile int cellsBusy;
 

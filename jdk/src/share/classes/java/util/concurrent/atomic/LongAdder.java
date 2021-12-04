@@ -111,7 +111,8 @@ public class LongAdder extends Striped64 implements Serializable {
      * atomic snapshot; invocation in the absence of concurrent
      * updates returns an accurate result, but concurrent updates that
      * occur while the sum is being calculated might not be
-     * incorporated.
+     * incorporated.<br/>
+     * 将cells数组中的多个值加起来的和就类似于AtomicLong中的value
      *
      * @return the sum
      */
@@ -184,6 +185,7 @@ public class LongAdder extends Striped64 implements Serializable {
      * @return the sum
      */
     public long longValue() {
+        //longValue()方法调用了sum()，累加所以Cell的值
         return sum();
     }
 
