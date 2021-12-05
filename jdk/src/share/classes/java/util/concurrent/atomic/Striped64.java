@@ -178,14 +178,26 @@ abstract class Striped64 extends Number {
     }
 
     /**
-     * CASes the base field.
+     * CASes the base field.<br\>
+     * 使用CAS来更新base值
      */
     final boolean casBase(long cmp, long val) {
         return UNSAFE.compareAndSwapLong(this, BASE, cmp, val);
     }
 
     /**
-     * CASes the cellsBusy field from 0 to 1 to acquire lock.
+     * CASes the cellsBusy field from 0 to 1 to acquire lock.<br\>
+     * 将cellsBusy成员字段的值通过CAS操作改为1，表示目前的cells数组正在初始化或扩容中。<br\><br\>
+     *
+     * casCellsBusy()方法相当于锁的功能：当线程需要cells数组初始化或扩容时，需要调用casCellsBusy()方法，
+     * 通过CAS方式将cellsBusy成员的值改为1，如果修改失败，就表示其他的线程正在进行数组初始化或扩容的操作。只有CAS操作成功，
+     * cellsBusy成员的值被改为1，当前线程才能执行cells数组初始化或扩容的操作。在cells数组初始化或扩容的操作执行完成之后，
+     * cellsBusy成员的值被改为0，这时不需要进行CAS修改，直接修改即可，因为不存在争用。<br\><br\>
+     *
+     * 当cellsBusy成员值为1时，表示cells数组正在被某个线程执行初始化或扩容操作，其他线程不能进行以下操作：<br\>
+     * （1）对cells数组执行初始化。<br\>
+     * （2）对cells数组执行扩容。<br\>
+     * （3）如果cells数组中某个元素为null，就为该元素创建新的Cell对象。因为数组的结构正在修改，所以其他线程不能创建新的Cell对象。
      */
     final boolean casCellsBusy() {
         return UNSAFE.compareAndSwapInt(this, CELLSBUSY, 0, 1);
@@ -217,27 +229,58 @@ abstract class Striped64 extends Number {
      * creating new Cells, and/or contention. See above for
      * explanation. This method suffers the usual non-modularity
      * problems of optimistic retry code, relying on rechecked sets of
-     * reads.
+     * reads.<br\>
+     * longAccumulate()是Striped64中重要的方法，实现不同的线程更新各自Cell中的值，其实现逻辑类似于分段锁
      *
      * @param x the value
      * @param fn the update function, or null for add (this convention
      * avoids the need for an extra field or function in LongAdder).
      * @param wasUncontended false if CAS failed before call
      */
-    final void longAccumulate(long x, LongBinaryOperator fn,
-                              boolean wasUncontended) {
+    final void longAccumulate(long x, LongBinaryOperator fn, boolean wasUncontended) {
         int h;
         if ((h = getProbe()) == 0) {
             ThreadLocalRandom.current(); // force initialization
             h = getProbe();
             wasUncontended = true;
         }
+        // 扩容意向，collide=true可以扩容，collide=false不可扩容
         boolean collide = false;                // True if last slot nonempty
+
+        // 自旋，一直到操作成功
         for (;;) {
+            // as表示cells引用,a 表示当前线程命中的Cell,n表示cells数组长度,v表示期望值
             Cell[] as; Cell a; int n; long v;
+        /*
+            自旋过程中，有三个大的if分支：
+            ·CASE 1：表示cells已经初始化了，当前线程应该将数据写入对应的Cell中。
+            ·CASE 2：cells还未初始化（as为null），本分支计划初始化cells，在此之前开始执行cellsBusy加锁，并且要求cellsBusy加锁成功。
+            ·CASE 3：如果cellsBusy加锁失败，表示其他线程正在初始化cells，所以当前线程将值累加到base上。
+        */
+
+        /*
+            CASE 1表示当前线程应该将数据写入对应的Cell中，又分为以下几种细分情况：
+            ·CASE 1.1：表示当前线程对应的下标位置的Cell为null，需要创建新Cell。
+            ·CASE 1.2：wasUncontended是add(…)方法传递进来的参数如果为false，就表示cells已经被初始化，并且线程对应位置的Cell元素也
+            已经被初始化，但是当前线程对Cell元素的竞争修改失败。如果add方法中的条件语句CASE 5通过CAS尝试把cells[m%cells.length]位
+            置的Cell对象的value值设置为v+x而失败了，就说明已经发生竞争，就将wasUncontended设置为false。如果wasUncontended为
+            false，就需要重新计算prob的值，那么自旋操作进入下一轮循环。
+            ·CASE 1.3：无论执行CASE 1分支的哪个子条件，都会在末尾执行h=advanceProb()语句rehash出一个新哈希值，然后命中新的Cell，
+            如果新命中的Cell不为空，在此分支进行CAS更新，将Cell的值更新为a.value+x，如果更新成功，就跳出自旋操作；否则还得继续自旋。
+            ·CASE 1.4：调整cells数组的扩容意向，然后进入下一轮循环。如果n≥NCPU条件成立，就表示cells数组大小已经大于等于CPU核数，
+            扩容意向改为false，表示不扩容了；如果该条件不成立，就说明cells数组还可以扩容，尽管如此，如果cells != as为true，
+            就表示其他线程已经扩容过了，也会将扩容意向改为false，表示当前循环不扩容了。当前线程调到CASE 1分支的末尾执行rehash操作重
+            新计算prob的值，然后进入下一轮循环。
+            ·CASE 1.5：如果!collide=true满足，就表示扩容意向不满足，设置扩容意向为true，但是不一定真的发生扩容，然后进入CASE 1分支
+            末尾重新计算prob的值，接着进入下一轮循环。
+            ·CASE 1.6：执行真正扩容的逻辑。其条件一cellsBusy==0为true表示当前cellsBusy的值为0（无锁状态），当前线程可以去竞争这
+            把锁；其条件二casCellsBusy()表示当前线程获取锁成功，CAS操作cellsBusy改为0成功，可以执行扩容逻辑。
+        */
+            // CASE 1: 表示cells已经初始化了，当前线程应该将数据写入对应的Cell中.这个大的if分支有三个小分支
             if ((as = cells) != null && (n = as.length) > 0) {
+                //CASE 1.1: true表示下标位置的Cell为null，需要创建new Cell
                 if ((a = as[(n - 1) & h]) == null) {
-                    if (cellsBusy == 0) {       // Try to attach new Cell
+                    if (cellsBusy == 0) {       // Try to attach new Cell.cells数组没有处于创建、扩容阶段
                         Cell r = new Cell(x);   // Optimistically create
                         if (cellsBusy == 0 && casCellsBusy()) {
                             boolean created = false;
@@ -259,15 +302,20 @@ abstract class Striped64 extends Number {
                     }
                     collide = false;
                 }
+                // CASE 1.2：当前线程竞争修改失败，wasUncontended为false
                 else if (!wasUncontended)       // CAS already known to fail
                     wasUncontended = true;      // Continue after rehash
+                // CASE 1.3：当前线程rehash过哈希值，CAS更新Cell
                 else if (a.cas(v = a.value, ((fn == null) ? v + x :
                                              fn.applyAsLong(v, x))))
                     break;
+                // CASE 1.4: 调整扩容意向，然后进入下一轮循环
                 else if (n >= NCPU || cells != as)
-                    collide = false;            // At max size or stale
+                    collide = false;            // At max size or stale.达到最大值，或as值已过期
+                // CASE 1.5: 设置扩容意向为true，但是不一定真的发生扩容
                 else if (!collide)
                     collide = true;
+                // CASE 1.6：真正扩容的逻辑
                 else if (cellsBusy == 0 && casCellsBusy()) {
                     try {
                         if (cells == as) {      // Expand table unless stale
@@ -277,13 +325,14 @@ abstract class Striped64 extends Number {
                             cells = rs;
                         }
                     } finally {
-                        cellsBusy = 0;
+                        cellsBusy = 0; // 释放锁
                     }
                     collide = false;
                     continue;                   // Retry with expanded table
                 }
-                h = advanceProbe(h);
+                h = advanceProbe(h); // 重置（rehash）当前线程的hash值
             }
+            // CASE 2：cells还未初始化（as为null），并且cellsBusy加锁成功
             else if (cellsBusy == 0 && cells == as && casCellsBusy()) {
                 boolean init = false;
                 try {                           // Initialize table
@@ -299,9 +348,11 @@ abstract class Striped64 extends Number {
                 if (init)
                     break;
             }
+            // CASE 3：当前线程cellsBusy加锁失败，表示其他线程正在初始化cells，所以当前线程将值累加到base，
+            // 注意add(…)方法调用此方法时fn为null
             else if (casBase(v = base, ((fn == null) ? v + x :
                                         fn.applyAsLong(v, x))))
-                break;                          // Fall back on using base
+                break;                          // Fall back on using base.在base操作成功时跳出自旋
         }
     }
 

@@ -83,12 +83,26 @@ public class LongAdder extends Striped64 implements Serializable {
      */
     public void add(long x) {
         Cell[] as; long b, v; int m; Cell a;
-        if ((as = cells) != null || !casBase(b = base, b + x)) {
+        /*
+        ·条件语句CASE 1：cells数组不为null，说明存在争用；在不存在争用的时候，cells数组一定为null，一旦对base的cas操作失败，才会初始
+        化cells数组。
+        ·条件语句CASE 2：如果cells数组为null，表示之前不存在争用，并且此次casBase执行成功，表示基于base成员累加成功，add方法直接返回；
+        如果casBase方法执行失败，说明产生了第一次争用冲突，需要对cells数组初始化，此时即将进入内层if块。
+        ·条件语句CASE 3：as==null||(m=as.length-1)<0代表cells没有初始化。
+        ·条件语句CASE 4：指当前线程的hash值在cells数组映射位置的Cell对象为空，意思是还没有其他线程在同一个位置做过累加操作。
+        ·条件语句CASE 5：指当前线程的哈希值在cells数组映射位置的Cell对象不为空，然后在该Cell对象上进行CAS操作，设置其值为v+x（x为该
+        Cell需要累加的值），但是CAS操作失败，表示存在争用。
+        */
+        if ((as = cells) != null || // CASE 1
+                !casBase(b = base, b + x)) { // CASE 2
+            // 代码走到这里，说明有多线程竞争，此时需要通过Cell元素进行累加，而不是通过base属性进行累加
             boolean uncontended = true;
-            if (as == null || (m = as.length - 1) < 0 ||
-                (a = as[getProbe() & m]) == null ||
-                !(uncontended = a.cas(v = a.value, v + x)))
+            if (as == null || (m = as.length - 1) < 0 || // CASE 3
+                (a = as[getProbe() & m]) == null || // CASE 4
+                !(uncontended = a.cas(v = a.value, v + x))) { // CASE 5
+                // longAccumulate()是Striped64中重要的方法，实现不同的线程更新各自Cell中的值，其实现逻辑类似于分段锁
                 longAccumulate(x, null, uncontended);
+            }
         }
     }
 
