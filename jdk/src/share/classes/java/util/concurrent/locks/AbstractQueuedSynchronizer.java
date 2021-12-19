@@ -378,20 +378,57 @@ public abstract class AbstractQueuedSynchronizer
      * on the design of this class.
      */
     static final class Node {
-        /** Marker to indicate a node is waiting in shared mode */
+        /**
+         * Marker to indicate a node is waiting in shared mode.<br\>
+         * 标识节点在抢占共享锁，SHARED表示线程是因为获取共享资源时阻塞而被添加到队列中的
+         */
         static final Node SHARED = new Node();
-        /** Marker to indicate a node is waiting in exclusive mode */
+        /**
+         * Marker to indicate a node is waiting in exclusive mode.<br\>
+         * 标识节点在抢占独占锁，EXCLUSIVE表示线程是因为获取独占资源时阻塞而被添加到队列中的
+         */
         static final Node EXCLUSIVE = null;
 
-        /** waitStatus value to indicate thread has cancelled */
+        /**
+         * waitStatus value to indicate thread has cancelled.<br/>
+         * 节点等待状态值1：取消状态。<br/>
+         * waitStatus值为1时表示该线程节点已释放（超时、中断），
+         * 已取消的节点不会再阻塞，表示线程因为中断或者等待超时，
+         * 需要从等待队列中取消等待。<br/>
+         * 由于该节点线程等待超时或者被中断，需要从同步队列中取消等待，因此该线程被置1。
+         * 节点进入了取消状态，该类型节点不会参与竞争，且会一直保持取消状态。
+         */
         static final int CANCELLED =  1;
-        /** waitStatus value to indicate successor's thread needs unparking */
+        /**
+         * waitStatus value to indicate successor's thread needs unparking.<br\>
+         * 节点等待状态值-1：标识后继线程处于等待状态<br/>
+         * waitStatus为SIGNAL（－1）时表示其后继的节点处于等待状态，
+         * 当前节点对应的线程如果释放了同步状态或者被取消，就会通知后继节点，
+         * 使后继节点的线程得以运行。
+         */
         static final int SIGNAL    = -1;
-        /** waitStatus value to indicate thread is waiting on condition */
+        /**
+         * waitStatus value to indicate thread is waiting on condition.<br\>
+         * 节点等待状态值-2：标识当前线程正在进行条件等待。<br\>
+         * waitStatus为－2时，表示该线程在条件队列中阻塞（Condition有使用），
+         * 表示节点在等待队列中（这里指的是等待在某个锁的CONDITION上。<br\>
+         * 当持有锁的线程调用了CONDITION的signal()方法之后，节点会从该CONDITION的等待
+         * 队列转移到该锁的同步队列上，去竞争锁（注意：这里的同步队列就是我们讲的AQS维护的
+         * FIFO队列，等待队列则是每个CONDITION关联的队列）。<br\>
+         * 节点处于等待队列中，节点线程等待在CONDITION上，当其他线程对CONDITION调用了
+         * signal()方法后，该节点从等待队列中转移到同步队列中，加入对同步状态的获取中。
+         */
         static final int CONDITION = -2;
         /**
          * waitStatus value to indicate the next acquireShared should
-         * unconditionally propagate
+         * unconditionally propagate.<br\>
+         * 节点等待状态值-3：标识下一次共享锁的acquireShared操作需要无条件传播。<br\>
+         * waitStatus为－3时，表示下一个线程获取共享锁后，自己的共享状态会被无条件地传播下去，
+         * 因为共享锁可能出现同时有N个锁可以用，这时直接让后面的N个节点都来工作。
+         * 这种状态在CountDownLatch中使用到了。<br\>
+         * 为什么当一个节点的线程获取共享锁后，要唤醒后继共享节点？共享锁是可以多个线程共有的，
+         * 当一个节点的线程获取共享锁后，必然要通知后继共享节点的线程也可以获取锁了，这样就不会
+         * 让其他等待的线程等很久，这种向后通知（传播）的目的也是尽快通知其他等待的线程尽快获取锁。
          */
         static final int PROPAGATE = -3;
 
@@ -427,7 +464,9 @@ public abstract class AbstractQueuedSynchronizer
          *
          * The field is initialized to 0 for normal sync nodes, and
          * CONDITION for condition nodes.  It is modified using CAS
-         * (or when possible, unconditional volatile writes).
+         * (or when possible, unconditional volatile writes).<br\>
+         * 节点状态：值为SIGNAL、CANCELLED、CONDITION、PROPAGATE、0。<br\>
+         * 普通的同步节点的初始值为0，条件等待节点的初始值为CONDITION（-2）
          */
         volatile int waitStatus;
 
@@ -440,7 +479,8 @@ public abstract class AbstractQueuedSynchronizer
          * because the head node is never cancelled: A node becomes
          * head only as a result of successful acquire. A
          * cancelled thread never succeeds in acquiring, and a thread only
-         * cancels itself, not any other node.
+         * cancels itself, not any other node.<br\>
+         * 前驱节点，当前节点会在前驱节点上自旋，循环检查前驱节点的waitStatus状态
          */
         volatile Node prev;
 
@@ -455,13 +495,15 @@ public abstract class AbstractQueuedSynchronizer
          * to be null, we can scan prev's from the tail to
          * double-check.  The next field of cancelled nodes is set to
          * point to the node itself instead of null, to make life
-         * easier for isOnSyncQueue.
+         * easier for isOnSyncQueue.<br\>
+         * 后继节点
          */
         volatile Node next;
 
         /**
          * The thread that enqueued this node.  Initialized on
-         * construction and nulled out after use.
+         * construction and nulled out after use.<br\>
+         * 节点所对应的线程，为抢锁线程或者条件等待线程
          */
         volatile Thread thread;
 
@@ -473,7 +515,10 @@ public abstract class AbstractQueuedSynchronizer
          * conditions. They are then transferred to the queue to
          * re-acquire. And because conditions can only be exclusive,
          * we save a field by using special value to indicate shared
-         * mode.
+         * mode.<br\>
+         * 若当前Node不是普通节点而是条件等待节点，则节点处于某个条件的等待队列上。
+         * 此属性指向下一个条件等待节点，即其条件队列上的后继节点。此成员只有线程处
+         * 于条件等待队列中的时候使用。
          */
         Node nextWaiter;
 
@@ -517,24 +562,34 @@ public abstract class AbstractQueuedSynchronizer
      * Head of the wait queue, lazily initialized.  Except for
      * initialization, it is modified only via method setHead.  Note:
      * If head exists, its waitStatus is guaranteed not to be
-     * CANCELLED.
+     * CANCELLED.<br\>
+     * 首节点的引用。<br\>
+     * AQS通过内置的FIFO双向队列来完成线程的排队工作，内部通过节点head
+     * 和tail记录队首和队尾元素，元素的节点类型为Node类型。<br\>
+     * AQS的首节点和尾节点都是懒加载的。只有在线程竞争失败的情况下，
+     * 有新线程加入同步队列时，AQS才创建一个head节点。head节点只能
+     * 被setHead()方法修改，并且节点的waitStatus不能为CANCELLED。
+     * 尾节点只在有新线程阻塞时才被创建。<br\>
      */
     private transient volatile Node head;
 
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
-     * method enq to add new wait node.
+     * method enq to add new wait node.<br\>
+     * 尾节点的引用
      */
     private transient volatile Node tail;
 
     /**
-     * The synchronization state.
+     * The synchronization state.<br\>
+     * 同步状态，使用volatile保证线程可见
      */
     private volatile int state;
 
     /**
      * Returns the current value of synchronization state.
-     * This operation has memory semantics of a {@code volatile} read.
+     * This operation has memory semantics of a {@code volatile} read.<br\>
+     * 获取同步状态
      * @return current state value
      */
     protected final int getState() {
@@ -543,7 +598,8 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Sets the value of synchronization state.
-     * This operation has memory semantics of a {@code volatile} write.
+     * This operation has memory semantics of a {@code volatile} write.<br\>
+     * 设置同步状态
      * @param newState the new state value
      */
     protected final void setState(int newState) {
@@ -554,7 +610,9 @@ public abstract class AbstractQueuedSynchronizer
      * Atomically sets synchronization state to the given updated
      * value if the current state value equals the expected value.
      * This operation has memory semantics of a {@code volatile} read
-     * and write.
+     * and write.<br\>
+     * 通过CAS设置同步的状态。由于setState()无法保证原子性，因此AQS给我们提供了
+     * compareAndSetState()方法利用底层UnSafe的CAS机制来实现原子性。
      *
      * @param expect the expected value
      * @param update the new value
