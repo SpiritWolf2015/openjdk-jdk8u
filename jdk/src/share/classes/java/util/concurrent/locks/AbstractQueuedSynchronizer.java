@@ -1246,16 +1246,25 @@ public abstract class AbstractQueuedSynchronizer
      * returning on success.  Otherwise the thread is queued, possibly
      * repeatedly blocking and unblocking, invoking {@link
      * #tryAcquire} until success.  This method can be used
-     * to implement method {@link Lock#lock}.
+     * to implement method {@link Lock#lock}.<br\>
+     *
+     * acquire(arg)至少执行一次tryAcquire(arg)钩子方法。tryAcquire(arg)方法AQS默认抛出一个异常，
+     * 具体的获取独占资源state的逻辑需要钩子方法来实现。若调用tryAcquire(arg)尝试成功，
+     * 则acquire()将直接返回，表示已经抢到锁；若不成功，则将线程加入等待队列。
      *
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
      */
     public final void acquire(int arg) {
-        if (!tryAcquire(arg) &&
-            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+        /*
+            tryAcquire:钩子方法.
+            addWaiter:钩子方法tryAcquire尝试获取同步状态失败的话，就构造同步节点（独占式节点模式为Node.EXCLUSIVE），
+            通过addWaiter(Node node,int args)方法将该节点加入同步队列的队尾.
+        */
+        if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
             selfInterrupt();
+        }
     }
 
     /**
