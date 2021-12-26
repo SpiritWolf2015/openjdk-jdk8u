@@ -634,7 +634,9 @@ public abstract class AbstractQueuedSynchronizer
     static final long spinForTimeoutThreshold = 1000L;
 
     /**
-     * Inserts node into queue, initializing if necessary. See picture above.
+     * Inserts node into queue, initializing if necessary. See picture above.<br>
+     * 这里进行了循环，如果此时存在tail，就执行添加新队尾的操作，如果依然不存在，就把当前线程
+     * 作为head节点，插入节点后，调用acquireQueued()进行阻塞
      * @param node the node to insert
      * @return node's predecessor
      */
@@ -642,9 +644,11 @@ public abstract class AbstractQueuedSynchronizer
         for (;;) {
             Node t = tail;
             if (t == null) { // Must initialize
+                // 队列为空，初始化尾节点和头节点为新节点
                 if (compareAndSetHead(new Node()))
                     tail = head;
             } else {
+                // 队列不为空，将新节点插入队列尾部
                 node.prev = t;
                 if (compareAndSetTail(t, node)) {
                     t.next = node;
@@ -661,16 +665,22 @@ public abstract class AbstractQueuedSynchronizer
      * @return the new node
      */
     private Node addWaiter(Node mode) {
+        // 创建新节点
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
+        // 加入队列尾部，将目前的队列tail作为自己的前驱节点pred
         Node pred = tail;
+        // 队尾不为空的时候
         if (pred != null) {
             node.prev = pred;
+            // 先尝试通过CAS方式修改尾节点为最新的节点
+            // 如果修改成功，将节点加入队列的尾部
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
                 return node;
             }
         }
+        // 第一次尝试添加尾部失败，意味着有并发抢锁发生，需要进行自旋
         enq(node);
         return node;
     }
@@ -852,12 +862,14 @@ public abstract class AbstractQueuedSynchronizer
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         int ws = pred.waitStatus;
-        if (ws == Node.SIGNAL)
+        if (ws == Node.SIGNAL) {
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
             return true;
+        }
+
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
@@ -916,21 +928,34 @@ public abstract class AbstractQueuedSynchronizer
         boolean failed = true;
         try {
             boolean interrupted = false;
+            // 自旋检查当前节点的前驱节点释放为头节点，才能获取锁
             for (;;) {
+                // 获取节点的前驱节点
                 final Node p = node.predecessor();
+                // 节点中的线程循环地检查自己的前驱节点是否为head节点
+                // 前驱节点是head时，进一步调用子类的tryAcquire方法
                 if (p == head && tryAcquire(arg)) {
+                    // tryAcquire方法成功后，将当前节点设置为头节点，移除之前的头节点
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
                 }
+                // 检查前一个节点的状态，预判当前获取锁失败的线程是否要挂起
+                // 如果需要挂起，则调用parkAndCheckInterrupt方法挂起当前线程，直到被唤醒
                 if (shouldParkAfterFailedAcquire(p, node) &&
-                    parkAndCheckInterrupt())
+                    parkAndCheckInterrupt()) {
+                    // 若两个操作都是true，则置true
                     interrupted = true;
+                }
             }
         } finally {
-            if (failed)
+            // 如果等待过程中没有成功获取资源（如timeout，或者线程被中断了）
+            // 那么取消节点在队列中的等待
+            if (failed) {
+                // 取消请求，将当前节点从队列中移除
                 cancelAcquire(node);
+            }
         }
     }
 
@@ -2348,14 +2373,16 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * CAS head field. Used only by enq.
+     * CAS head field. Used only by enq.<br\>
+     * CAS操作head指针，仅仅被enq()调用
      */
     private final boolean compareAndSetHead(Node update) {
         return unsafe.compareAndSwapObject(this, headOffset, null, update);
     }
 
     /**
-     * CAS tail field. Used only by enq.
+     * CAS tail field. Used only by enq.<br\>
+     * CAS操作tail指针，仅仅被enq()调用
      */
     private final boolean compareAndSetTail(Node expect, Node update) {
         return unsafe.compareAndSwapObject(this, tailOffset, expect, update);
