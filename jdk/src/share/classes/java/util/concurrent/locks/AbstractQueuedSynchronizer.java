@@ -854,30 +854,51 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Checks and updates status for a node that failed to acquire.
      * Returns true if thread should block. This is the main signal
-     * control in all acquire loops.  Requires that pred == node.prev.
+     * control in all acquire loops.  Requires that pred == node.prev.<br\>
+     * 将当前节点的有效前驱节点（是指有效节点，不是CANCELLED类型的节点）找到，并且将有效前驱节点的状态设置为SIGNAL，
+     * 之后返回true代表当前线程可以马上被阻塞了。具体可以分为三种情况：<br\>
+     * (1）如果前驱节点的状态为-1（SIGNAL），说明前驱的等待标志已设好，返回true表示设置完毕。<br\>
+     * (2）如果前驱节点的状态为1（CANCELLED），说明前驱节点本身不再等待了，需要跨越这些节点，然后找到一个有效节点，
+     * 再把当前节点和这个有效节点的唤醒关系建立好：调整前驱节点的next指针为自己。<br\>
+     * (3）如果是其他情况：-3（PROPAGATE，共享锁等待）、-2（CONDITION，条件等待）、0（初始状态），那么通过CAS
+     * 尝试设置前驱节点为SIGNAL，表示只要前驱节点释放锁，当前节点就可以抢占锁了。<br\>
      *
      * @param pred node's predecessor holding status
      * @param node the node
      * @return {@code true} if thread should block
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        /*
+        独占锁的场景中，shouldParkAfterFailedAcquire()方法是在acquireQueued()方法的死循环中被调用的，
+        由于此方法返回false时acquireQueued()不会阻塞当前线程，只有此方法返回true时当前线程才阻塞，因此在一般情况下，
+        此方法至少需要执行两次，当前线程才会被阻塞
+        */
+
+        // 获得前驱节点的状态
         int ws = pred.waitStatus;
         if (ws == Node.SIGNAL) {
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
+            // 如果前驱节点状态为SIGNAL(值为-1)就直接返回
             return true;
         }
 
+        // 前驱节点已经取消CANCELLED(值为1)
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
              */
             do {
-                node.prev = pred = pred.prev;
+                // 不断地循环，找到有效前驱节点，即非CANCELLED（值为1）类型节点
+                // 将pred记录前驱的前驱
+                pred = pred.prev;
+                // 调整当前节点的prev指针，保持为前驱的前驱
+                node.prev = pred;
             } while (pred.waitStatus > 0);
+            // 调整前驱节点的next指针
             pred.next = node;
         } else {
             /*
@@ -885,6 +906,7 @@ public abstract class AbstractQueuedSynchronizer
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
+            // 如果前驱状态不是CANCELLED，也不是SIGNAL，就设置为SIGNAL
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
         return false;
@@ -928,7 +950,7 @@ public abstract class AbstractQueuedSynchronizer
         boolean failed = true;
         try {
             boolean interrupted = false;
-            // 自旋检查当前节点的前驱节点释放为头节点，才能获取锁
+            // 自旋检查当前节点的前驱节点是否为头节点，才能获取锁
             for (;;) {
                 // 获取节点的前驱节点
                 final Node p = node.predecessor();
