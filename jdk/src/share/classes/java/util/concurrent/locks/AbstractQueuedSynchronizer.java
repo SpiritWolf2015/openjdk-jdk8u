@@ -644,11 +644,15 @@ public abstract class AbstractQueuedSynchronizer
         for (;;) {
             Node t = tail;
             if (t == null) { // Must initialize
-                // 队列为空，初始化尾节点和头节点为新节点
-                if (compareAndSetHead(new Node()))
+                // 队列为空，初始化尾节点和头节点为新节点。
+                // 但请注意，初始化的头结点并不是当前线程节点，而是调用了无参构造函数的新new节点。
+                if (compareAndSetHead(new Node())) {
                     tail = head;
+                }
             } else {
-                // 队列不为空，将新节点插入队列尾部
+                // 队列不为空，将新节点插入队列尾部。
+                // 如果经历了初始化或者并发导致队列中有元素，则与之前的方法相同。
+                // 其实addWaiter就是一个在双端链表添加尾节点的操作，需要注意的是，双端链表的头结点是一个无参构造函数的头结点。
                 node.prev = t;
                 if (compareAndSetTail(t, node)) {
                     t.next = node;
@@ -688,7 +692,8 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Sets head of queue to be node, thus dequeuing. Called only by
      * acquire methods.  Also nulls out unused fields for sake of GC
-     * and to suppress unnecessary signals and traversals.
+     * and to suppress unnecessary signals and traversals.<br\>
+     * 注意：setHead方法是把当前节点置为虚节点，但并没有修改waitStatus，因为它是一直需要用的数据。
      *
      * @param node the node
      */
@@ -871,11 +876,12 @@ public abstract class AbstractQueuedSynchronizer
         /*
         独占锁的场景中，shouldParkAfterFailedAcquire()方法是在acquireQueued()方法的死循环中被调用的，
         由于此方法返回false时acquireQueued()不会阻塞当前线程，只有此方法返回true时当前线程才阻塞，因此在一般情况下，
-        此方法至少需要执行两次，当前线程才会被阻塞
+        此方法至少需要执行两次，当前线程才会被阻塞。
         */
 
-        // 获得前驱节点的状态
+        // 获得前驱节点的状态，靠前驱节点判断当前线程是否应该被阻塞
         int ws = pred.waitStatus;
+        // 说明头结点处于唤醒状态
         if (ws == Node.SIGNAL) {
             /*
              * This node has already set status asking a release
@@ -891,14 +897,15 @@ public abstract class AbstractQueuedSynchronizer
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
              */
+            // 循环向前查找取消节点，把取消节点从队列中剔除
             do {
                 // 不断地循环，找到有效前驱节点，即非CANCELLED（值为1）类型节点
-                // 将pred记录前驱的前驱
+                // 将pred指向前驱的前驱
                 pred = pred.prev;
                 // 调整当前节点的prev指针，保持为前驱的前驱
                 node.prev = pred;
             } while (pred.waitStatus > 0);
-            // 调整前驱节点的next指针
+            // 调整前驱节点的next指针，执行到这里时pred指向的是非CANCELLED（值为1）类型节点
             pred.next = node;
         } else {
             /*
@@ -920,7 +927,8 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Convenience method to park and then check if interrupted
+     * Convenience method to park and then check if interrupted.<br/>
+     * 挂起当前线程，阻塞调用栈，返回当前线程的中断状态。
      *
      * @return {@code true} if interrupted
      */
@@ -947,24 +955,30 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted while waiting
      */
     final boolean acquireQueued(final Node node, int arg) {
+        // 标记是否成功拿到资源
         boolean failed = true;
         try {
+            // 标记等待过程中是否中断过
             boolean interrupted = false;
+            // 自旋，要么获取锁，要么中断
             // 自旋检查当前节点的前驱节点是否为头节点，才能获取锁
             for (;;) {
                 // 获取节点的前驱节点
                 final Node p = node.predecessor();
-                // 节点中的线程循环地检查自己的前驱节点是否为head节点
-                // 前驱节点是head时，进一步调用子类的tryAcquire方法
+                // 节点中的线程循环地检查自己的前驱节点是否为head节点,前驱节点是head时，进一步调用子类的tryAcquire方法.
+                // 如果p是头结点，说明当前节点在真实数据队列的首部，就尝试获取锁（别忘了头结点是虚节点）.
                 if (p == head && tryAcquire(arg)) {
-                    // tryAcquire方法成功后，将当前节点设置为头节点，移除之前的头节点
+                    // tryAcquire方法成功后，表示获取锁成功，将当前节点设置为头节点，移除之前的头节点
+                    // 注意：setHead方法是把当前节点置为虚节点，但并没有修改waitStatus，因为它是一直需要用的数据。
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
                 }
-                // 检查前一个节点的状态，预判当前获取锁失败的线程是否要挂起
-                // 如果需要挂起，则调用parkAndCheckInterrupt方法挂起当前线程，直到被唤醒
+                // 检查前一个节点的状态，预判当前获取锁失败的线程是否要挂起。如果需要挂起，则调用parkAndCheckInterrupt
+                // 方法挂起当前线程，直到被唤醒。
+                // 说明p为头节点且当前没有获取到锁（可能是非公平锁被抢占了）或者是p不为头结点，这个时候就要判断当前node是
+                // 否要被阻塞（被阻塞条件：前驱节点的waitStatus为SIGNAL(-1)），防止无限循环浪费资源。
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt()) {
                     // 若两个操作都是true，则置true
@@ -1308,6 +1322,8 @@ public abstract class AbstractQueuedSynchronizer
             tryAcquire:钩子方法.
             addWaiter:钩子方法tryAcquire尝试获取同步状态失败的话，就构造同步节点（独占式节点模式为Node.EXCLUSIVE），
             通过addWaiter(Node node,int args)方法将该节点加入同步队列的队尾.
+            acquireQueued方法：对排队中的线程进行“获锁”操作。一个线程获取锁失败了，被放入等待队列，acquireQueued会把放
+            入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。
         */
         if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
             selfInterrupt();
@@ -1616,7 +1632,9 @@ public abstract class AbstractQueuedSynchronizer
      *   } else {
      *     // try to acquire normally
      *   }
-     * }}</pre>
+     * }}</pre><br\>
+     * hasQueuedPredecessors是公平锁加锁时判断等待队列中是否存在有效节点的方法。如果返回False，
+     * 说明当前线程可以争取共享资源；如果返回True，说明队列中存在有效节点，当前线程必须加入到等待队列中。
      *
      * @return {@code true} if there is a queued thread preceding the
      *         current thread, and {@code false} if the current thread
@@ -1630,6 +1648,19 @@ public abstract class AbstractQueuedSynchronizer
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
+        /*
+           理解一下h != t && ((s = h.next) == null || s.thread != Thread.currentThread());为什么要判
+        断的头结点的下一个节点？第一个节点储存的数据是什么？
+           双向链表中，第一个节点为虚节点，其实并不存储任何信息，只是占位。真正的第一个有数据的节点，是在第二个节点开始的。
+        当h != t时： 如果(s = h.next) == null，等待队列正在有线程进行初始化，但只是进行到了Tail指向Head，
+        没有将Head指向Tail，此时队列中有元素，需要返回True（这块具体见下边代码分析）。 如果(s = h.next) != null，
+        说明此时队列中至少有一个有效节点。如果此时s.thread == Thread.currentThread()，
+        说明等待队列的第一个有效节点中的线程与当前线程相同，那么当前线程是可以获取资源的；
+        如果s.thread != Thread.currentThread()，说明等待队列的第一个有效节点线程与当前线程不同，当前线程必须加入进等待队列。
+
+        enq方法里的节点入队不是原子操作，所以会出现短暂的head != tail，此时Tail指向最后一个节点，而且Tail指向Head。
+        如果Head没有指向Tail（可见5、6、7行），这种情况下也需要将相关线程加入队列中。所以这块代码是为了解决极端情况下的并发问题。
+        */
         return h != t &&
             ((s = h.next) == null || s.thread != Thread.currentThread());
     }
