@@ -641,11 +641,13 @@ public abstract class AbstractQueuedSynchronizer
      * @return node's predecessor
      */
     private Node enq(final Node node) {
+        // 自旋入队
         for (;;) {
             Node t = tail;
             if (t == null) { // Must initialize
                 // 队列为空，初始化尾节点和头节点为新节点。
                 // 但请注意，初始化的头结点并不是当前线程节点，而是调用了无参构造函数的新new节点。
+                // 任何情况下，头节点里的thread字段永远为null
                 if (compareAndSetHead(new Node())) {
                     tail = head;
                 }
@@ -663,13 +665,14 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
-     * Creates and enqueues node for current thread and given mode.
+     * Creates and enqueues node for current thread and given mode.<br\>
+     * 使用指定模式创建新节点，并与当前线程绑定，将该节点加入同步队列的队尾
      *
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
      */
     private Node addWaiter(Node mode) {
-        // 创建新节点
+        // 使用指定模式创建新节点，与当前线程绑定
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         // 加入队列尾部，将目前的队列tail作为自己的前驱节点pred
@@ -714,9 +717,13 @@ public abstract class AbstractQueuedSynchronizer
          * to clear in anticipation of signalling.  It is OK if this
          * fails or if status is changed by waiting thread.
          */
+        // 获得节点状态，释放锁的节点，也就是头节点
         int ws = node.waitStatus;
-        if (ws < 0)
+        // CANCELLED（1）、SIGNAL（-1）、CONDITION （-2）、PROPAGATE（-3）
+        // 若头节点状态小于0，则将其置为0，表示初始状态
+        if (ws < 0) {
             compareAndSetWaitStatus(node, ws, 0);
+        }
 
         /*
          * Thread to unpark is held in successor, which is normally
@@ -724,15 +731,23 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
+        // 后继节点
         Node s = node.next;
         if (s == null || s.waitStatus > 0) {
+            // 如果新节点已经被取消CANCELLED（1），从队列尾部开始，往前去找最前面的一个waitStatus小于0的节点
             s = null;
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
         }
-        if (s != null)
+        if (s != null) {
+            // 唤醒后继节点的线程
             LockSupport.unpark(s.thread);
+            // 唤醒后继节点的线程后，后继节点的线程重新执行方法acquireQueued()中的自旋抢占逻辑.
+            // 当AQS头节点释放锁之后，头节点的状态变成初始状态，此节点理论上需要从队列中移除，
+            // 但是此时该无效节点并没有立即被移除，unparkSuccessor()方法并没有立即从队列中删除该无效节点，
+            // 仅仅唤醒了后继节点的线程，重启了后继节点的自旋抢锁.
+        }
     }
 
     /**
@@ -933,7 +948,9 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted
      */
     private final boolean parkAndCheckInterrupt() {
+        // 调用park()使线程进入waiting状态
         LockSupport.park(this);
+        // 如果被唤醒，查看自己是否已经被中断
         return Thread.interrupted();
     }
 
@@ -948,7 +965,11 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Acquires in exclusive uninterruptible mode for thread already in
-     * queue. Used by condition wait methods as well as acquire.
+     * queue. Used by condition wait methods as well as acquire.<br\>
+     * acquireQueued方法(出队)：对排队中的线程进行“获锁”操作。一个线程获取锁失败了，被放入等待队列，acquireQueued会把放
+     * 入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。<br\>
+     * acquireQueued方法不断在前驱节点上自旋（for死循环），如果前驱节点是头节点并且当前线程使用钩子方法tryAcquire(arg)
+     * 获得了锁，就移除头节点(出队)，将当前节点设置为头节点。
      *
      * @param node the node
      * @param arg the acquire argument
@@ -968,7 +989,7 @@ public abstract class AbstractQueuedSynchronizer
                 // 节点中的线程循环地检查自己的前驱节点是否为head节点,前驱节点是head时，进一步调用子类的tryAcquire方法.
                 // 如果p是头结点，说明当前节点在真实数据队列的首部，就尝试获取锁（别忘了头结点是虚节点）.
                 if (p == head && tryAcquire(arg)) {
-                    // tryAcquire方法成功后，表示获取锁成功，将当前节点设置为头节点，移除之前的头节点
+                    // tryAcquire方法成功后，表示获取锁成功，将当前节点设置为头节点，移除之前的头节点(出队)
                     // 注意：setHead方法是把当前节点置为虚节点，但并没有修改waitStatus，因为它是一直需要用的数据。
                     setHead(node);
                     p.next = null; // help GC
@@ -977,7 +998,7 @@ public abstract class AbstractQueuedSynchronizer
                 }
                 // 检查前一个节点的状态，预判当前获取锁失败的线程是否要挂起。如果需要挂起，则调用parkAndCheckInterrupt
                 // 方法挂起当前线程，直到被唤醒。
-                // 说明p为头节点且当前没有获取到锁（可能是非公平锁被抢占了）或者是p不为头结点，这个时候就要判断当前node是
+                // 说明p不为头结点或者是p为头节点但尝试获取锁失败（可能是非公平锁被抢占了），这个时候就要判断当前node是
                 // 否要被阻塞（被阻塞条件：前驱节点的waitStatus为SIGNAL(-1)），防止无限循环浪费资源。
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt()) {
@@ -1319,11 +1340,14 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final void acquire(int arg) {
         /*
-            tryAcquire:钩子方法.
-            addWaiter:钩子方法tryAcquire尝试获取同步状态失败的话，就构造同步节点（独占式节点模式为Node.EXCLUSIVE），
-            通过addWaiter(Node node,int args)方法将该节点加入同步队列的队尾.
-            acquireQueued方法：对排队中的线程进行“获锁”操作。一个线程获取锁失败了，被放入等待队列，acquireQueued会把放
-            入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。
+            tryAcquire:钩子方法，子类自定义如何获取锁。
+            addWaiter(入队):钩子方法tryAcquire尝试获取同步状态失败的话，就构造同步节点（独占式节点模式为Node.EXCLUSIVE），
+            通过addWaiter(Node node,int args)方法将该节点加入同步队列的队尾(入队)。
+
+            acquireQueued方法(出队)：对排队中的线程进行“获锁”操作。一个线程获取锁失败了，被放入等待队列，acquireQueued会把放
+            入队列中的线程不断去获取锁，直到获取成功或者不再需要获取（中断）。acquireQueued()方法不断在前驱节点上自
+            旋（for死循环），如果前驱节点是头节点并且当前线程使用钩子方法tryAcquire(arg)获得了锁，就移除头节点(出队)，
+            将当前节点设置为头节点。
         */
         if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
             selfInterrupt();
@@ -1388,10 +1412,13 @@ public abstract class AbstractQueuedSynchronizer
      * @return the value returned from {@link #tryRelease}
      */
     public final boolean release(int arg) {
+        // tryRelease:释放锁的钩子方法的实现
         if (tryRelease(arg)) {
             Node h = head;
-            if (h != null && h.waitStatus != 0)
+            if (h != null && h.waitStatus != 0) {
+                // 唤醒头节点的后继线程
                 unparkSuccessor(h);
+            }
             return true;
         }
         return false;
