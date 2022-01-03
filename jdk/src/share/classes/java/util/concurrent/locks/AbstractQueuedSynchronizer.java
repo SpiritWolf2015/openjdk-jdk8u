@@ -433,39 +433,40 @@ public abstract class AbstractQueuedSynchronizer
         static final int PROPAGATE = -3;
 
         /**
-         * Status field, taking on only the values:
+         * Status field, taking on only the values:<br\>
          *   SIGNAL:     The successor of this node is (or will soon be)
          *               blocked (via park), so the current node must
          *               unpark its successor when it releases or
          *               cancels. To avoid races, acquire methods must
          *               first indicate they need a signal,
          *               then retry the atomic acquire, and then,
-         *               on failure, block.
+         *               on failure, block.<br\>
          *   CANCELLED:  This node is cancelled due to timeout or interrupt.
          *               Nodes never leave this state. In particular,
-         *               a thread with cancelled node never again blocks.
+         *               a thread with cancelled node never again blocks.<br\>
          *   CONDITION:  This node is currently on a condition queue.
          *               It will not be used as a sync queue node
          *               until transferred, at which time the status
          *               will be set to 0. (Use of this value here has
          *               nothing to do with the other uses of the
-         *               field, but simplifies mechanics.)
+         *               field, but simplifies mechanics.)<br\>
          *   PROPAGATE:  A releaseShared should be propagated to other
          *               nodes. This is set (for head node only) in
          *               doReleaseShared to ensure propagation
          *               continues, even if other operations have
-         *               since intervened.
-         *   0:          None of the above
+         *               since intervened.<br\>
+         *   0:          None of the above.
+         *   0表示中间状态，当前节点后面的节点已经唤醒，但是当前节点线程还没有执行完成。<br\><br\>
          *
          * The values are arranged numerically to simplify use.
          * Non-negative values mean that a node doesn't need to
          * signal. So, most code doesn't need to check for particular
-         * values, just for sign.
+         * values, just for sign.<br\>
          *
          * The field is initialized to 0 for normal sync nodes, and
          * CONDITION for condition nodes.  It is modified using CAS
          * (or when possible, unconditional volatile writes).<br\>
-         * 节点状态：值为SIGNAL、CANCELLED、CONDITION、PROPAGATE、0。<br\>
+         * 节点状态：值为CANCELLED(1)、0、SIGNAL(-1)、CONDITION(-2)、PROPAGATE(-3)。<br\>
          * 普通的同步节点的初始值为0，条件等待节点的初始值为CONDITION（-2）
          */
         volatile int waitStatus;
@@ -503,7 +504,7 @@ public abstract class AbstractQueuedSynchronizer
         /**
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.<br\>
-         * 节点所对应的线程，为抢锁线程或者条件等待线程
+         * 节点所对应的线程，为抢锁线程或者条件等待线程。头节点里该字段永远为null。
          */
         volatile Thread thread;
 
@@ -948,7 +949,7 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted
      */
     private final boolean parkAndCheckInterrupt() {
-        // 调用park()使线程进入waiting状态
+        // 调用park()使线程进入waiting状态。重量级锁，会使进程从用户态切换到内核态
         LockSupport.park(this);
         // 如果被唤醒，查看自己是否已经被中断
         return Thread.interrupted();
