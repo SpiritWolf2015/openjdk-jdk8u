@@ -128,20 +128,30 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          */
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
+            // 先直接获得锁的状态
             int c = getState();
             if (c == 0) {
+                // 如果内部队列首节点的线程执行完了，它会将锁的state设置为0
+                // 当前抢锁线程的下一步就是直接进行抢占，不管不顾
+                // 发现state是空的，就直接拿来加锁使用，根本不考虑后继节点的存在
                 if (compareAndSetState(0, acquires)) {
+                    // 1. 利用CAS自旋方式判断当前state确实为0，然后设置成acquire（1）
+                    // 这是原子性的操作，可以保证线程安全
                     setExclusiveOwnerThread(current);
+                    // 设置当前执行的线程，直接返回true
                     return true;
                 }
-            }
-            else if (current == getExclusiveOwnerThread()) {
+            } else if (current == getExclusiveOwnerThread()) {
+                // 2.当前的线程和执行中的线程是同一个，也就意味着可重入操作
                 int nextc = c + acquires;
-                if (nextc < 0) // overflow
+                if (nextc < 0) { // overflow
                     throw new Error("Maximum lock count exceeded");
+                }
+                // 表示当前锁被1个线程重复获取了nextc次
                 setState(nextc);
                 return true;
             }
+            // 否则就返回false，表示没有成功获取当前锁，进入排队过程
             return false;
         }
 
@@ -193,33 +203,46 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     }
 
     /**
-     * Sync object for non-fair locks
+     * Sync object for non-fair locks.<br\>
+     * 非公平同步器ReentrantLock.NonfairSync的核心思想是当前线程尝试获取锁的时候，
+     * 如果发现锁的状态位是0，就直接尝试将锁拿过来，然后执行setExclusiveOwnerThread()，
+     * 根本不管同步队列中的排队节点。
      */
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = 7316153563782823691L;
 
         /**
          * Performs lock.  Try immediate barge, backing up to normal
-         * acquire on failure.
+         * acquire on failure.<br\>
+         * 非公平锁抢占
          */
         final void lock() {
-            if (compareAndSetState(0, 1))
+            // 当多个线程同时尝试占用同一个锁时，CAS操作只能保证一个线程操作成功，剩下的只能乖乖去排队。
+            // ReentrantLock“非公平”性体现在这里：如果占用锁的线程刚释放锁，state置为0，而排队等待锁的线程还未唤醒，
+            // 新来的线程就直接抢占了该锁，那么就“插队”了。举一个例子，当前有三个线程A、B、C去竞争锁，假设线程A、B在排队，
+            // 但是后来的C直接进行CAS操作成功了，拿到锁开开心心地返回了，那么线程A、B只能乖乖看着。
+            if (compareAndSetState(0, 1)) {
+                // CAS成功，则设置当前线程为该锁的独占线程，表示获取锁成功
                 setExclusiveOwnerThread(Thread.currentThread());
-            else
+            } else {
                 acquire(1);
+            }
         }
 
+        // 非公平锁抢占的钩子方法，方法加上了final修饰
         protected final boolean tryAcquire(int acquires) {
             return nonfairTryAcquire(acquires);
         }
     }
 
     /**
-     * Sync object for fair locks
+     * Sync object for fair locks.<br\>
+     * 公平同步器ReentrantLock.FairSync的核心思想是通过AQS模板方法进行队列入队操作。
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -3000897897090466540L;
 
+        // 公平锁抢占的钩子方法
         final void lock() {
             acquire(1);
         }
@@ -230,18 +253,22 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          */
         protected final boolean tryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
+            // 获取锁状态
             int c = getState();
+            // 还没有线程占有锁
             if (c == 0) {
+                // 没有任何线程等待获取的时间比当前线程长，并且CAS成功
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
+                    // 抢锁成功，设置当前线程为占有锁的线程
                     setExclusiveOwnerThread(current);
                     return true;
                 }
-            }
-            else if (current == getExclusiveOwnerThread()) {
+            } else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
-                if (nextc < 0)
+                if (nextc < 0) {
                     throw new Error("Maximum lock count exceeded");
+                }
                 setState(nextc);
                 return true;
             }
