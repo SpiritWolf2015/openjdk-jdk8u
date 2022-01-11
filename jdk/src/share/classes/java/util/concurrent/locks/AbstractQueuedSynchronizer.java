@@ -1626,7 +1626,8 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Queries whether any threads have been waiting to acquire longer
-     * than the current thread.
+     * than the current thread.<br\>
+     * 查询是否有任何线程等待获取的时间长于当前线程。<br\><br\>
      *
      * <p>An invocation of this method is equivalent to (but may be
      * more efficient than):
@@ -1666,7 +1667,8 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @return {@code true} if there is a queued thread preceding the
      *         current thread, and {@code false} if the current thread
-     *         is at the head of the queue or the queue is empty
+     *         is at the head of the queue or the queue is empty.<br\>
+     *         true:如果当前线程之前有一个排队的线程， false:如果当前线程位于队列的头部或队列为空。
      * @since 1.7
      */
     public final boolean hasQueuedPredecessors() {
@@ -1676,6 +1678,7 @@ public abstract class AbstractQueuedSynchronizer
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
+
         /*
            理解一下h != t && ((s = h.next) == null || s.thread != Thread.currentThread());为什么要判
         断的头结点的下一个节点？第一个节点储存的数据是什么？
@@ -1688,6 +1691,18 @@ public abstract class AbstractQueuedSynchronizer
 
         enq方法里的节点入队不是原子操作，所以会出现短暂的head != tail，此时Tail指向最后一个节点，而且Tail指向Head。
         如果Head没有指向Tail（可见5、6、7行），这种情况下也需要将相关线程加入队列中。所以这块代码是为了解决极端情况下的并发问题。
+        */
+        /*
+        hasQueuedPredecessors的执行场景大致如下：
+        （1）当h!=t不成立的时候，说明h头节点、t尾节点要么是同一个节点，要么都是null，此时hasQueuedPredecessors()返回false，
+        表示头节点没有后继节点。
+        （2）当h!=t成立的时候，进一步检查head.next是否为null，如果为null，就返回true。什么情况下h!=t，同时h.next==null呢？
+        有其他线程第一次正在入队时可能会出现。其他线程执行AQS的enq()方法，compareAndSetHead(node)完成，还没执行tail=head语句时，
+        此时t为null、head为new Node()、head.next为null。
+        （3）如果h!=t成立，head.next != null，判断head.next是不是当前线程，如果是就返回false，否则返回true。
+
+        head节点是获取到锁的节点，但是任意时刻head节点可能占用着锁，也可能释放了锁，如果释放了锁，那么此时state=0，
+        未被阻塞的head.next节点对应的线程在任意时刻都是在自旋地尝试获取锁。
         */
         return h != t &&
             ((s = h.next) == null || s.thread != Thread.currentThread());
