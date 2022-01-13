@@ -2017,9 +2017,15 @@ public abstract class AbstractQueuedSynchronizer
      */
     public class ConditionObject implements Condition, java.io.Serializable {
         private static final long serialVersionUID = 1173984872572414699L;
-        /** First node of condition queue. */
+        /**
+         * First node of condition queue.<br\>
+         * 条件队列的头节点
+         */
         private transient Node firstWaiter;
-        /** Last node of condition queue. */
+        /**
+         * Last node of condition queue.<br\>
+         * 条件队列的尾节点
+         */
         private transient Node lastWaiter;
 
         /**
@@ -2036,15 +2042,21 @@ public abstract class AbstractQueuedSynchronizer
         private Node addConditionWaiter() {
             Node t = lastWaiter;
             // If lastWaiter is cancelled, clean out.
+            // 如果尾节点取消，重新定位尾节点
             if (t != null && t.waitStatus != Node.CONDITION) {
                 unlinkCancelledWaiters();
                 t = lastWaiter;
             }
+
+            // 创建一个新Node，作为等待节点
             Node node = new Node(Thread.currentThread(), Node.CONDITION);
-            if (t == null)
+            // 将新Node加入等待队列
+            if (t == null) {
                 firstWaiter = node;
-            else
+            } else {
                 t.nextWaiter = node;
+            }
+
             lastWaiter = node;
             return node;
         }
@@ -2218,22 +2230,42 @@ public abstract class AbstractQueuedSynchronizer
          * </ol>
          */
         public final void await() throws InterruptedException {
-            if (Thread.interrupted())
+            if (Thread.interrupted()) {
                 throw new InterruptedException();
-            Node node = addConditionWaiter();
-            int savedState = fullyRelease(node);
-            int interruptMode = 0;
-            while (!isOnSyncQueue(node)) {
-                LockSupport.park(this);
-                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
-                    break;
             }
-            if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+            /*
+            await()方法的整体流程如下：
+            （1）执行await()时，会新创建一个节点并放入Condition队列尾部。
+            （2）然后释放锁，并唤醒AQS同步队列中的头节点的后一个节点。
+            （3）然后执行while循环，将该节点的线程阻塞，直到该节点离开等待队列，重新回到同步队列成为同步节点后，
+            线程才退出while循环。
+            （4）退出循环后，开始调用acquireQueued()不断尝试拿锁。
+            （5）拿到锁后，会清空Condition队列中被取消的节点。
+            */
+            Node node = addConditionWaiter(); //流程1
+            int savedState = fullyRelease(node); //流程2
+            int interruptMode = 0;
+
+            while (!isOnSyncQueue(node)) { //流程3
+                LockSupport.park(this);
+                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0) {
+                    break;
+                }
+            }
+
+            if (acquireQueued(node, savedState) && //流程4
+                    interruptMode != THROW_IE) {
                 interruptMode = REINTERRUPT;
-            if (node.nextWaiter != null) // clean up if cancelled
+            }
+
+            if (node.nextWaiter != null) { //流程5
+                // clean up if cancelled
                 unlinkCancelledWaiters();
-            if (interruptMode != 0)
+            }
+
+            if (interruptMode != 0) {
                 reportInterruptAfterWait(interruptMode);
+            }
         }
 
         /**
