@@ -1850,7 +1850,9 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Transfers a node from a condition queue onto sync queue.
-     * Returns true if successful.
+     * Returns true if successful.<br\>
+     * 将被唤醒的节点转移到同步队列
+     *
      * @param node the node
      * @return true if successfully transferred (else the node was
      * cancelled before signal)
@@ -1863,15 +1865,26 @@ public abstract class AbstractQueuedSynchronizer
             return false;
 
         /*
+        signal()方法的整体流程如下：
+        （1）通过enq()方法自旋（该方法已经介绍过）将条件队列中的头节点放入AQS同步队列尾部，
+        并获取它在AQS队列中的前驱节点。
+        （2）如果前驱节点的状态是取消状态，或者设置前驱节点为Signal状态失败，就唤醒当前节点的线程；
+        否则节点在同步队列的尾部，参与排队。
+        （3）同步队列中的线程被唤醒后，表示重新获取了显式锁，然后继续执行condition.await()语句
+        后面的临界区代码。
+        */
+
+        /*
          * Splice onto queue and try to set waitStatus of predecessor to
          * indicate that thread is (probably) waiting. If cancelled or
          * attempt to set waitStatus fails, wake up to resync (in which
          * case the waitStatus can be transiently and harmlessly wrong).
          */
-        Node p = enq(node);
+        Node p = enq(node); // 流程1
         int ws = p.waitStatus;
-        if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
-            LockSupport.unpark(node.thread);
+        if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL)) {
+            LockSupport.unpark(node.thread); // 流程2：唤醒线程
+        }
         return true;
     }
 
@@ -2064,16 +2077,24 @@ public abstract class AbstractQueuedSynchronizer
         /**
          * Removes and transfers nodes until hit non-cancelled one or
          * null. Split out from signal in part to encourage compilers
-         * to inline the case of no waiters.
+         * to inline the case of no waiters.<br\>
+         * 执行唤醒
+         *
          * @param first (non-null) the first node on condition queue
          */
         private void doSignal(Node first) {
             do {
-                if ( (firstWaiter = first.nextWaiter) == null)
+                // first出队，firstWaiter头部指向下一个节点，自己的nextWaiter
+                if ((firstWaiter = first.nextWaiter) == null) {
+                    // 如果第二节点为空，则尾部也为空
                     lastWaiter = null;
+                }
+                // 将原来头部first的后继置空，help for GC
                 first.nextWaiter = null;
+
+                //如果transfer没成功，那么转移下一个节点，否则让此节点进去等待队列并自旋获取锁
             } while (!transferForSignal(first) &&
-                     (first = firstWaiter) != null);
+                    (first = firstWaiter) != null);
         }
 
         /**
@@ -2135,11 +2156,12 @@ public abstract class AbstractQueuedSynchronizer
          *         returns {@code false}
          */
         public final void signal() {
+            // 如果当前线程不是持有该锁的线程，就抛出异常
             if (!isHeldExclusively())
                 throw new IllegalMonitorStateException();
             Node first = firstWaiter;
             if (first != null)
-                doSignal(first);
+                doSignal(first); // 唤醒头节点
         }
 
         /**
