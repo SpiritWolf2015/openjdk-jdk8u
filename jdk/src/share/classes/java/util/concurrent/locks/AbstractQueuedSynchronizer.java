@@ -949,7 +949,9 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted
      */
     private final boolean parkAndCheckInterrupt() {
-        // 调用park()使线程进入waiting状态。重量级锁，会使进程从用户态切换到内核态
+        // 调用park()使线程进入waiting状态。重量级锁，会使进程从用户态切换到内核态。
+        // 如果当前线程的中断标记已经是true了, 再执行park方法会失效，当前线程不会阻塞，而会继续执行Thread.interrupted()，
+        // Thread.interrupted()执行完毕后会清除线程的中断标记为false，并在返回值里返回线程是否已经被中断了。
         LockSupport.park(this);
         // 如果被唤醒，查看自己是否已经被中断
         return Thread.interrupted();
@@ -1330,14 +1332,17 @@ public abstract class AbstractQueuedSynchronizer
      * repeatedly blocking and unblocking, invoking {@link
      * #tryAcquire} until success.  This method can be used
      * to implement method {@link Lock#lock}.<br\>
+     * 翻译:以独占模式获取，忽略中断。 通过至少调用一次{@link #tryAcquire}实现 ，返回成功。 否则线程排队，
+     * 可能反复阻塞和解除阻塞，调用{@link #tryAcquire}直到成功。该方法可用于实现方法{@link Lock#lock}.<br\><br\>
      *
      * acquire(arg)至少执行一次tryAcquire(arg)钩子方法。tryAcquire(arg)方法AQS默认抛出一个异常，
      * 具体的获取独占资源state的逻辑需要钩子方法来实现。若调用tryAcquire(arg)尝试成功，
-     * 则acquire()将直接返回，表示已经抢到锁；若不成功，则将线程加入等待队列。
+     * 则acquire()将直接返回，表示已经抢到锁；若不成功，则将线程加入等待队列。<br\>
      *
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquire} but is otherwise uninterpreted and
-     *        can represent anything you like.
+     *        can represent anything you like.<br\>
+ *            arg - 获取参数。 此值传达到{@link #tryAcquire}但未解释，可以表示您喜欢的任何内容。
      */
     public final void acquire(int arg) {
         /*
