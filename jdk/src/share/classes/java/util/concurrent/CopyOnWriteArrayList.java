@@ -94,22 +94,31 @@ public class CopyOnWriteArrayList<E>
     implements List<E>, RandomAccess, Cloneable, java.io.Serializable {
     private static final long serialVersionUID = 8673264195747942595L;
 
-    /** The lock protecting all mutators */
+    /**
+     * The lock protecting all mutators.<br\>
+     * 对所有的修改器方法进行保护，访问器方法并不需要保护
+     */
     final transient ReentrantLock lock = new ReentrantLock();
 
-    /** The array, accessed only via getArray/setArray. */
+    /**
+     * The array, accessed only via getArray/setArray.<br\>
+     * 内部对象数组，通过 getArray/setArray方法访问。注意:使用了volatile修饰
+     */
     private transient volatile Object[] array;
 
     /**
      * Gets the array.  Non-private so as to also be accessible
-     * from CopyOnWriteArraySet class.
+     * from CopyOnWriteArraySet class.<br\>
+     * 获取内部对象数组。<br\>
+     * 访问器的读取操作没有任何同步控制和锁操作，理由是内部数组array不会发生修改，只会被另一个array替换，因此可以保证数据安全。
      */
     final Object[] getArray() {
         return array;
     }
 
     /**
-     * Sets the array.
+     * Sets the array.<br\>
+     * 设置内部对象数组
      */
     final void setArray(Object[] a) {
         array = a;
@@ -383,6 +392,12 @@ public class CopyOnWriteArrayList<E>
 
     // Positional Access Operations
 
+    /**
+     * 访问器的读取操作没有任何同步控制和锁操作，理由是内部数组array不会发生修改，只会被另一个array替换，因此可以保证数据安全。
+     * @param a
+     * @param index
+     * @return
+     */
     @SuppressWarnings("unchecked")
     private E get(Object[] a, int index) {
         return (E) a[index];
@@ -426,23 +441,27 @@ public class CopyOnWriteArrayList<E>
     }
 
     /**
-     * Appends the specified element to the end of this list.
+     * Appends the specified element to the end of this list.<br\>
+     * CopyOnWriteArrayList的写入操作add()方法在执行时加了独占锁以确保只能有一个线程进行写入操作，
+     * 避免多线程写的时候会复制出多个副本。
      *
      * @param e element to be appended to this list
      * @return {@code true} (as specified by {@link Collection#add})
      */
     public boolean add(E e) {
         final ReentrantLock lock = this.lock;
-        lock.lock();
+        lock.lock(); // 加锁
         try {
             Object[] elements = getArray();
             int len = elements.length;
+            // 复制元素到新数组
             Object[] newElements = Arrays.copyOf(elements, len + 1);
             newElements[len] = e;
+            // 设置引用新数组
             setArray(newElements);
             return true;
         } finally {
-            lock.unlock();
+            lock.unlock(); // 释放锁
         }
     }
 
