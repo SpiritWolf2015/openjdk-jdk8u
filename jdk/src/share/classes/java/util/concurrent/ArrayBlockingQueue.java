@@ -90,16 +90,28 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      */
     private static final long serialVersionUID = -817911632652898426L;
 
-    /** The queued items */
+    /**
+     * The queued items.<br\>
+     * 存储数据的数组
+     */
     final Object[] items;
 
-    /** items index for next take, poll, peek or remove */
+    /**
+     * items index for next take, poll, peek or remove.<br\>
+     * 获取、删除元素的索引，主要用于take、poll、peek、remove方法
+     */
     int takeIndex;
 
-    /** items index for next put, offer, or add */
+    /**
+     * items index for next put, offer, or add.<br\>
+     * 添加元素的索引，主要用于 put、offer、add方法
+     */
     int putIndex;
 
-    /** Number of elements in the queue */
+    /**
+     * Number of elements in the queue.<br\>
+     * 队列元素的个数
+     */
     int count;
 
     /*
@@ -107,19 +119,29 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      * found in any textbook.
      */
 
-    /** Main lock guarding all access */
+    /**
+     * Main lock guarding all access.<br\>
+     * 控制并发访问的显式锁
+     */
     final ReentrantLock lock;
 
-    /** Condition for waiting takes */
+    /**
+     * Condition for waiting takes.<br\>
+     * notEmpty条件对象，用于通知take线程（消费队列），可执行删除操作
+     */
     private final Condition notEmpty;
 
-    /** Condition for waiting puts */
+    /**
+     * Condition for waiting puts.<br\>
+     * notFull条件对象，用于通知put线程（生产队列），可执行添加操作
+     */
     private final Condition notFull;
 
     /**
      * Shared state for currently active iterators, or null if there
      * are known not to be any.  Allows queue operations to update
-     * iterator state.
+     * iterator state.<br\>
+     * 迭代器
      */
     transient Itrs itrs = null;
 
