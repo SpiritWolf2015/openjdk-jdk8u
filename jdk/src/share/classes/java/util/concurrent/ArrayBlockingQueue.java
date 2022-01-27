@@ -180,29 +180,55 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         // assert lock.getHoldCount() == 1;
         // assert items[putIndex] == null;
         final Object[] items = this.items;
+        // 通过putIndex索引对数组进行赋值
         items[putIndex] = x;
-        if (++putIndex == items.length)
+        if (++putIndex == items.length) {
+            // 索引自增，如果已是最后一个位置，则重置putIndex为0
             putIndex = 0;
+        }
+        // 队列中元素数量加1
         count++;
+        // 唤醒调用take()方法的线程，执行元素获取操作
         notEmpty.signal();
+        /*
+           首先，由于进入enqueue()方法意味着数组没满，因此enqueue()方法可以通过
+        putIndex索引直接将元素添加到数组items中，然后调整putIndex索引值。
+           大家可能会疑惑：当putIndex索引大小等于数组长度时，为什么需要将putIndex重新设置为0呢？
+        这是因为获取元素时总是在队列头部（takeIndex索引）操作，添加元素总是在队列尾部（putIndex索引）操作，
+        而ArrayBlockingQueue将内部数组作为环形队列使用，所以在更新后索引值与数组长度相等时需要进行校正，
+        下一个值就需要从数组的第一个元素（索引值0）开始操作。
+           其次，enqueue()完成尾部的插入后，将自己的元素个数成员count+1。
+           最后，enqueue()通过调用notFull.notEmpty()唤醒一个消费（或删除）线程。
+        */
     }
 
     /**
      * Extracts element at current take position, advances, and signals.
-     * Call only when holding lock.
+     * Call only when holding lock.<br\>
+     * 删除队列头元素并返回
      */
     private E dequeue() {
         // assert lock.getHoldCount() == 1;
         // assert items[takeIndex] != null;
         final Object[] items = this.items;
+        // 获取要删除的对象
         @SuppressWarnings("unchecked")
         E x = (E) items[takeIndex];
+        // 清空位置：将数组中的takeIndex索引位置设置为null
         items[takeIndex] = null;
-        if (++takeIndex == items.length)
+        // 如果相等就说明已到尽头，恢复为0
+        if (++takeIndex == items.length) {
             takeIndex = 0;
+        }
+
+        // 元素个数减1
         count--;
-        if (itrs != null)
+        if (itrs != null) {
+            // 同时更新迭代器中的元素数据
             itrs.elementDequeued();
+        }
+
+        // 删除了元素说明队列有空位，唤醒notFull条件等待队列中的put线程，执行添加操作
         notFull.signal();
         return x;
     }
@@ -344,13 +370,17 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException if the specified element is null
      */
     public boolean offer(E e) {
+        // 检查元素是否为null
         checkNotNull(e);
         final ReentrantLock lock = this.lock;
+        // 加锁
         lock.lock();
         try {
-            if (count == items.length)
+            if (count == items.length) {
+                // 数组已满
                 return false;
-            else {
+            } else {
+                // 添加元素到队列
                 enqueue(e);
                 return true;
             }
@@ -361,7 +391,11 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
 
     /**
      * Inserts the specified element at the tail of this queue, waiting
-     * for space to become available if the queue is full.
+     * for space to become available if the queue is full.<br\>
+     * 阻塞式添加元素。在队列满而不能添加元素时，执行添加元素的线程会被阻塞。put()方法
+     * 是一个阻塞的方法，如果队列元素已满，那么当前线程会被加入notFull条件对象的等待队
+     * 列中，直到队列有空位置才会被唤醒执行添加操作。但如果队列没有满，就直接调用
+     * enqueue(e)方法将元素加入数组队列中。put()方法阻塞时可中断。
      *
      * @throws InterruptedException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
@@ -369,10 +403,13 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     public void put(E e) throws InterruptedException {
         checkNotNull(e);
         final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
+        lock.lockInterruptibly(); // 该方法可中断
         try {
-            while (count == items.length)
+            while (count == items.length) {
+                // 将当前调用线程挂起，添加到notFull条件队列中，等待被唤醒
                 notFull.await();
+            }
+            // 如果队列没有满，就直接添加
             enqueue(e);
         } finally {
             lock.unlock();
@@ -411,6 +448,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 判断队列是否为null，不为null执行dequeue()方法，否则返回null
             return (count == 0) ? null : dequeue();
         } finally {
             lock.unlock();
