@@ -455,13 +455,15 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    // 从队列头部移除元素，队列没有元素则阻塞，可中断
     public E take() throws InterruptedException {
         final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
+        lock.lockInterruptibly(); // 加锁，可中断
         try {
+            // 如果队列没有元素，则执行阻塞操作
             while (count == 0)
                 notEmpty.await();
-            return dequeue();
+            return dequeue(); // 队列如果有元素则执行删除操作
         } finally {
             lock.unlock();
         }
@@ -487,6 +489,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 直接返回当前队列的头元素，但不删除
             return itemAt(takeIndex); // null when queue is empty
         } finally {
             lock.unlock();
