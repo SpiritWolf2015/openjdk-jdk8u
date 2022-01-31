@@ -591,8 +591,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /*
      * Encodings for Node hash fields. See above for explanation.
      */
-    static final int MOVED     = -1; // hash for forwarding nodes
-    static final int TREEBIN   = -2; // hash for roots of trees
+    static final int MOVED     = -1; // hash for forwarding nodes.常量：表示正在转移
+    static final int TREEBIN   = -2; // hash for roots of trees.常量：表示已经转换成树
     static final int RESERVED  = -3; // hash for transient reservations
     static final int HASH_BITS = 0x7fffffff; // usable bits of normal node hash
 
@@ -768,12 +768,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * The array of bins. Lazily initialized upon first insertion.
-     * Size is always a power of two. Accessed directly by iterators.
+     * Size is always a power of two. Accessed directly by iterators.<br\>
+     * 数组，用来保存元素。注意使用了volatile修饰
      */
     transient volatile Node<K,V>[] table;
 
     /**
-     * The next table to use; non-null only while resizing.
+     * The next table to use; non-null only while resizing.<br\>
+     * 转移时用的数组。注意使用了volatile修饰
      */
     private transient volatile Node<K,V>[] nextTable;
 
@@ -790,7 +792,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * else -(1 + the number of active resizing threads).  Otherwise,
      * when table is null, holds the initial table size to use upon
      * creation, or 0 for default. After initialization, holds the
-     * next element count value upon which to resize the table.
+     * next element count value upon which to resize the table.<br\>
+     * 用来控制表初始化和扩容的控制属性。注意使用了volatile修饰
      */
     private transient volatile int sizeCtl;
 
