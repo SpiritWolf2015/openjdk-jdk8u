@@ -882,7 +882,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private transient volatile int cellsBusy;
 
     /**
-     * Table of counter cells. When non-null, size is a power of 2.
+     * Table of counter cells. When non-null, size is a power of 2.<br\>
+     * 计数桶，注意使用了volatile修饰
      */
     private transient volatile CounterCell[] counterCells;
 
@@ -2360,26 +2361,43 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * resizing, initiates transfer. If already resizing, helps
      * perform transfer if work is available.  Rechecks occupancy
      * after a transfer to see if another resize is already needed
-     * because resizings are lagging additions.
+     * because resizings are lagging additions.<br\>
+     * ConcurrentHashMap在每次put操作之后都会调用addCount方法，此方法用
+     * 于统计容器大小且检测容器大小是否达到阈值，若达到阈值需要进行扩容操作。
      *
      * @param x the count to add
      * @param check if <0, don't check resize, if <= 1 only check if uncontended
      */
     private final void addCount(long x, int check) {
-        CounterCell[] as; long b, s;
+        // 计数桶
+        CounterCell[] as;
+        long b, s;
+
+        // 如果counterCells不为null，则代表已经初始化了，直接进入if语句块
+        // 若竞争不严重，counterCells有可能还未初始化，为null，先尝试CAS操作递增baseCount值
         if ((as = counterCells) != null ||
-            !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
+                !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
+            // 进入此语句块有两种可能:
+            // 1.counterCells被初始化完成了，不为null。
+            // 2.CAS操作递增baseCount值失败了，说明有竞争
             CounterCell a; long v; int m;
+            // 标志是否存在竞争
             boolean uncontended = true;
-            if (as == null || (m = as.length - 1) < 0 ||
-                (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
-                !(uncontended =
-                  U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) {
+
+            // 1.先判断计数桶是否还没初始化，则as=null，进入语句块
+            // 2.判断计数桶长度是否为空，若是进入语句块
+            // 3.这里做了一个线程变量随机数，与上桶大小-1，若桶的这个位置为空，进入语句块
+            // 4.到这里说明桶已经初始化了，且随机的这个位置不为空，尝试CAS操作使桶加1，失败进入语句块
+            if (as == null || //1
+                    (m = as.length - 1) < 0 || //2
+                    (a = as[ThreadLocalRandom.getProbe() & m]) == null || //3
+                    !(uncontended = U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) { //4
                 fullAddCount(x, uncontended);
                 return;
             }
             if (check <= 1)
                 return;
+            // 统计容器大小
             s = sumCount();
         }
 
@@ -2675,11 +2693,19 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         CounterCell(long x) { value = x; }
     }
 
+    /**
+     * 统计容器大小
+     */
     final long sumCount() {
-        CounterCell[] as = counterCells; CounterCell a;
+        // 获取计数桶
+        CounterCell[] as = counterCells;
+        CounterCell a;
+        // 获取baseCount，赋值给sum总数
         long sum = baseCount;
+        // 若计数桶不为空，统计计数桶内的值
         if (as != null) {
             for (int i = 0; i < as.length; ++i) {
+                // 遍历计数桶，将value值相加
                 if ((a = as[i]) != null)
                     sum += a.value;
             }
@@ -2687,17 +2713,19 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         return sum;
     }
 
-    // See LongAdder version for explanation
+    // See LongAdder version for explanation.参考LongAdder类的解释说明
     private final void fullAddCount(long x, boolean wasUncontended) {
         int h;
         if ((h = ThreadLocalRandom.getProbe()) == 0) {
-            ThreadLocalRandom.localInit();      // force initialization
+            ThreadLocalRandom.localInit(); // force initialization
             h = ThreadLocalRandom.getProbe();
             wasUncontended = true;
         }
-        boolean collide = false;                // True if last slot nonempty
+
+        boolean collide = false; // True if last slot nonempty
         for (;;) {
             CounterCell[] as; CounterCell a; int n; long v;
+            // 如果计数桶!=null，证明已经初始化，此时不走此语句块
             if ((as = counterCells) != null && (n = as.length) > 0) {
                 if ((a = as[(n - 1) & h]) == null) {
                     if (cellsBusy == 0) {            // Try to attach new Cell
@@ -2748,6 +2776,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
                 h = ThreadLocalRandom.advanceProbe(h);
             }
+            // 进入此语句块进行计数桶的初始化,CAS设置cellsBusy=1，表示现在计数桶Busy中
             else if (cellsBusy == 0 && counterCells == as &&
                      U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                 boolean init = false;
