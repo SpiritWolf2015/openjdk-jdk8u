@@ -1014,14 +1014,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         Node<K,V>[] tab; Node<K,V> e, p; int n, eh; K ek;
         int h = spread(key.hashCode());
 
+        // 此过程与HashMap的get操作无异，不多赘述
         if ((tab = table) != null && (n = tab.length) > 0 &&
                 (e = tabAt(tab, (n - 1) & h)) != null) {
             if ((eh = e.hash) == h) {
                 if ((ek = e.key) == key || (ek != null && key.equals(ek)))
                     return e.val;
             } else if (eh < 0) {
-                // 假如Node节点的hash值小于0,则有可能是fwd节点
-                // 调用节点对象的find方法查找值
+                // 假如Node节点的hash值小于0,则有可能是fwd占位节点
+                // 调用节点对象的find方法去查找新table中的数据
                 return (p = e.find(h, key)) != null ? p.val : null;
             }
             while ((e = e.next) != null) {
@@ -2392,6 +2393,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     (m = as.length - 1) < 0 || //2
                     (a = as[ThreadLocalRandom.getProbe() & m]) == null || //3
                     !(uncontended = U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) { //4
+                // 若CAS操作失败，证明有竞争，进入fullAddCount方法
                 fullAddCount(x, uncontended);
                 return;
             }
@@ -2686,7 +2688,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * A padded cell for distributing counts.  Adapted from LongAdder
-     * and Striped64.  See their internal docs for explanation.
+     * and Striped64.  See their internal docs for explanation.<br\>
+     * 计数桶
      */
     @sun.misc.Contended static final class CounterCell {
         volatile long value;
@@ -2725,23 +2728,29 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         boolean collide = false; // True if last slot nonempty
         for (;;) {
             CounterCell[] as; CounterCell a; int n; long v;
-            // 如果计数桶!=null，证明已经初始化，此时不走此语句块
+            // 如果计数桶!=null，证明已经初始化，此时走此语句块
             if ((as = counterCells) != null && (n = as.length) > 0) {
+                // 从计数桶数组随机选一个计数桶，若为null表示该桶位还没线程递增过
                 if ((a = as[(n - 1) & h]) == null) {
+                    // 查看计数桶busy状态是否被标识
                     if (cellsBusy == 0) {            // Try to attach new Cell
+                        // 若不busy，直接new一个计数桶
                         CounterCell r = new CounterCell(x); // Optimistic create
+                        // CAS操作，标示计数桶busy中
                         if (cellsBusy == 0 &&
-                            U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
+                                U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                             boolean created = false;
                             try {               // Recheck under lock
                                 CounterCell[] rs; int m, j;
+                                // 在锁下再检查一次计数桶为null
                                 if ((rs = counterCells) != null &&
-                                    (m = rs.length) > 0 &&
-                                    rs[j = (m - 1) & h] == null) {
+                                        (m = rs.length) > 0 &&
+                                        rs[j = (m - 1) & h] == null) {
                                     rs[j] = r;
                                     created = true;
                                 }
                             } finally {
+                                // 标示不busy了
                                 cellsBusy = 0;
                             }
                             if (created)
@@ -2753,22 +2762,32 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
                 else if (!wasUncontended)       // CAS already known to fail
                     wasUncontended = true;      // Continue after rehash
+                // 走到这里代表计数桶不为null，尝试递增计数桶
                 else if (U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))
                     break;
                 else if (counterCells != as || n >= NCPU)
                     collide = false;            // At max size or stale
+                // 若CAS操作失败了，到了这里，会先进入一次，然后再走一次刚刚的for循环
+                // 若是第二次for循环，collide=true，则不会走进去
                 else if (!collide)
                     collide = true;
+                // 计数桶扩容，一个线程若走了两次for循环，也就是进行了多次CAS操作递增计数桶失败了
+                // 则进行计数桶扩容，CAS标示计数桶busy中
                 else if (cellsBusy == 0 &&
-                         U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
+                        U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                     try {
-                        if (counterCells == as) {// Expand table unless stale
+                        // 确认计数桶还是同一个
+                        if (counterCells == as) { // Expand table unless stale
+                            // n<<1等价于n*2，即将长度扩大到2倍
                             CounterCell[] rs = new CounterCell[n << 1];
+                            // 遍历旧计数桶，将引用直接搬过来
                             for (int i = 0; i < n; ++i)
                                 rs[i] = as[i];
+                            // 赋值给计数桶成员字段
                             counterCells = rs;
                         }
                     } finally {
+                        // 取消busy状态
                         cellsBusy = 0;
                     }
                     collide = false;
@@ -2779,22 +2798,27 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             // 进入此语句块进行计数桶的初始化,CAS设置cellsBusy=1，表示现在计数桶Busy中
             else if (cellsBusy == 0 && counterCells == as &&
                      U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
+                // 若有线程同时初始化计数桶，由于CAS操作只有一个线程进入这里
                 boolean init = false;
-                try {                           // Initialize table
-                    if (counterCells == as) {
+                try { // Initialize table
+                    if (counterCells == as) { // 再次确认计数桶为空
                         CounterCell[] rs = new CounterCell[2];
+                        // h为一个随机数，与上1则代表结果为0、1中随机的一个，也就是在0、1下
+                        // 标中随便选一个计数桶，x=1，放入1的值代表增加1个容量
                         rs[h & 1] = new CounterCell(x);
                         counterCells = rs;
                         init = true;
                     }
                 } finally {
+                    // 最后将busy标识设置为0，表示不busy了
                     cellsBusy = 0;
                 }
                 if (init)
                     break;
             }
+            // 若有线程同时来初始化计数桶，则没有抢到busy资格的线程就先来CAS递增baseCount
             else if (U.compareAndSwapLong(this, BASECOUNT, v = baseCount, v + x))
-                break;                          // Fall back on using base
+                break; // Fall back on using base
         }
     }
 
