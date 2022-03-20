@@ -129,7 +129,8 @@ public class ThreadLocal<T> {
 
     /**
      * Creates a thread local variable. The initial value of the variable is
-     * determined by invoking the {@code get} method on the {@code Supplier}.
+     * determined by invoking the {@code get} method on the {@code Supplier}.<br\>
+     * ThreadLocal工厂方法可以设置本地变量初始值钩子函数.
      *
      * @param <S> the type of the thread local's value
      * @param supplier the supplier to be used to determine the initial value
@@ -157,16 +158,23 @@ public class ThreadLocal<T> {
      * @return the current thread's value of this thread-local
      */
     public T get() {
+        // 获得当前线程对象
         Thread t = Thread.currentThread();
+        // 获得线程对象的ThreadLocalMap内部成员
         ThreadLocalMap map = getMap(t);
+        // 如果当前线程的内部map成员存在
         if (map != null) {
+            // 以当前ThreadLocal为Key，尝试获得条目
             ThreadLocalMap.Entry e = map.getEntry(this);
+            // 条目存在
             if (e != null) {
                 @SuppressWarnings("unchecked")
                 T result = (T)e.value;
                 return result;
             }
         }
+        // 如果当前线程对应的map不存在
+        // 或者map存在，但是当前ThreadLocal实例没有对应的“Key-Value对”，返回初始值
         return setInitialValue();
     }
 
@@ -197,7 +205,9 @@ public class ThreadLocal<T> {
      *        this thread-local.
      */
     public void set(T value) {
+        // 获得当前线程对象
         Thread t = Thread.currentThread();
+        // 获得当前线程的ThreadLocalMap成员
         ThreadLocalMap map = getMap(t);
         if (map != null)
             map.set(this, value);
@@ -269,18 +279,20 @@ public class ThreadLocal<T> {
 
     /**
      * An extension of ThreadLocal that obtains its initial value from
-     * the specified {@code Supplier}.
+     * the specified {@code Supplier}.<br\>
+     * 内部静态子类继承了ThreadLocal，重写了initialValue()方法，返回钩子函数的值作为初始值
      */
     static final class SuppliedThreadLocal<T> extends ThreadLocal<T> {
-
+        // 保存钩子函数
         private final Supplier<? extends T> supplier;
-
+        // 传入钩子函数
         SuppliedThreadLocal(Supplier<? extends T> supplier) {
             this.supplier = Objects.requireNonNull(supplier);
         }
 
         @Override
         protected T initialValue() {
+            // 返回钩子函数的值作为初始值
             return supplier.get();
         }
     }
@@ -303,7 +315,8 @@ public class ThreadLocal<T> {
          * ThreadLocal object).  Note that null keys (i.e. entry.get()
          * == null) mean that the key is no longer referenced, so the
          * entry can be expunged from table.  Such entries are referred to
-         * as "stale entries" in the code that follows.
+         * as "stale entries" in the code that follows.<br\>
+         * Map的条目类型，静态内部类，继承于WeakReference，Key为ThreadLocal实例
          */
         static class Entry extends WeakReference<ThreadLocal<?>> {
             /** The value associated with this ThreadLocal. */
@@ -316,23 +329,27 @@ public class ThreadLocal<T> {
         }
 
         /**
-         * The initial capacity -- MUST be a power of two.
+         * The initial capacity -- MUST be a power of two.<br\>
+         * map的初始容量
          */
         private static final int INITIAL_CAPACITY = 16;
 
         /**
          * The table, resized as necessary.
-         * table.length MUST always be a power of two.
+         * table.length MUST always be a power of two.<br\>
+         * map的条目数组，作为哈希表使用
          */
         private Entry[] table;
 
         /**
-         * The number of entries in the table.
+         * The number of entries in the table.<br\>
+         * map的条目数量
          */
         private int size = 0;
 
         /**
-         * The next size value at which to resize.
+         * The next size value at which to resize.<br\>
+         * 扩容因子
          */
         private int threshold; // Default to 0
 
@@ -460,26 +477,35 @@ public class ThreadLocal<T> {
 
             Entry[] tab = table;
             int len = tab.length;
+            // 根据key的HashCode，找到key在数组上的槽点i
             int i = key.threadLocalHashCode & (len-1);
 
+            // 从槽点i开始向后循环搜索，找空余槽点（空余位置）或者找现有槽点
+            // 若没有现有槽点，则必定有空余槽点，因为没有空间时会扩容
             for (Entry e = tab[i];
                  e != null;
                  e = tab[i = nextIndex(i, len)]) {
                 ThreadLocal<?> k = e.get();
 
+                // 找到现有槽点：Key值为ThreadLocal实例
                 if (k == key) {
                     e.value = value;
                     return;
                 }
 
+                // 找到异常槽点：槽点被GC掉，重设Key值和Value值
                 if (k == null) {
                     replaceStaleEntry(key, value, i);
                     return;
                 }
             }
 
+            // 没有找到现有的槽点，增加新的Entry
             tab[i] = new Entry(key, value);
+            // 设置ThreadLocal数量
             int sz = ++size;
+            // 清理Key为null的无效Entry
+            // 没有可清理的Entry，并且现有条目数量大于扩容因子值，进行扩容
             if (!cleanSomeSlots(i, sz) && sz >= threshold)
                 rehash();
         }
