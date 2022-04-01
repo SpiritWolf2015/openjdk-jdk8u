@@ -1053,34 +1053,51 @@ public abstract class AbstractQueuedSynchronizer
      * @param nanosTimeout max wait time
      * @return {@code true} if acquired
      */
-    private boolean doAcquireNanos(int arg, long nanosTimeout)
-            throws InterruptedException {
+    private boolean doAcquireNanos(int arg, long nanosTimeout) throws InterruptedException {
         if (nanosTimeout <= 0L)
             return false;
         final long deadline = System.nanoTime() + nanosTimeout;
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
+
         try {
             for (;;) {
+                // 获取当前节点的前驱节点
                 final Node p = node.predecessor();
+                // 前驱节点是头节点，并且钩子方法返回true
                 if (p == head && tryAcquire(arg)) {
+                    // 抢锁成功，设置当前节点为新的头节点。因为同一时刻只能有一个线程抢锁成功，所以这里不需要用CAS操作
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return true;
                 }
                 nanosTimeout = deadline - System.nanoTime();
-                if (nanosTimeout <= 0L)
+                if (nanosTimeout <= 0L) {
+                    // 超时，抢锁失败
                     return false;
+                }
+                /*
+                如果nanosTimeout小于等于spinForTimeoutThreshold（1000纳秒）时，将不会使该线程进行超时等待，
+                而是进入快速的自旋过程。原因在于，非常短的超时等待无法做到十分精确，如果这时再进行超时等待，
+                相反会让nanosTimeout的超时从整体上表现得反而不精确。因此，在超时非常短的场景下，同步器会进入
+                无条件的快速自旋
+                */
                 if (shouldParkAfterFailedAcquire(p, node) &&
-                    nanosTimeout > spinForTimeoutThreshold)
+                        nanosTimeout > spinForTimeoutThreshold) {
+                    // 阻塞nanosTimeout纳秒后，线程会自动恢复过来
                     LockSupport.parkNanos(this, nanosTimeout);
-                if (Thread.interrupted())
+                }
+                if (Thread.interrupted()) {
+                    // 响应中断
                     throw new InterruptedException();
+                }
             }
         } finally {
-            if (failed)
+            // 只有抢锁成功才会将failed设为false，其他情况（超时、中断）failed都为true
+            if (failed) {
                 cancelAcquire(node);
+            }
         }
     }
 
