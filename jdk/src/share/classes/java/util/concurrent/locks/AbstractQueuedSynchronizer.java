@@ -577,7 +577,7 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
      * method enq to add new wait node.<br\>
-     * 尾节点的引用
+     * 尾节点的引用.由于队列里有一个虚节点作为头节点，所以当head等于tail时，要么队列为NULL，要么只有一个正在执行的线程.
      */
     private transient volatile Node tail;
 

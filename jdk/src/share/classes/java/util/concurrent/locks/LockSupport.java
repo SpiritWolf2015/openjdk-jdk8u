@@ -131,7 +131,8 @@ public class LockSupport {
      * {@code park} then it will unblock.  Otherwise, its next call
      * to {@code park} is guaranteed not to block. This operation
      * is not guaranteed to have any effect at all if the given
-     * thread has not been started.
+     * thread has not been started.<br\>
+     * unpark函数实现了一个线程对另外一个线程的“精准唤醒”,Object类的notify函数无法指定具体唤醒哪个线程.
      *
      * @param thread the thread to unpark, or {@code null}, in which case
      *        this operation has no effect
@@ -298,7 +299,8 @@ public class LockSupport {
      * <p>This method does <em>not</em> report which of these caused the
      * method to return. Callers should re-check the conditions which caused
      * the thread to park in the first place. Callers may also determine,
-     * for example, the interrupt status of the thread upon return.
+     * for example, the interrupt status of the thread upon return.<br\>
+     * 哪个线程调用park函数，该线程就会被阻塞，直到另外一个线程调用unpark函数将该阻塞线程唤醒.
      */
     public static void park() {
         UNSAFE.park(false, 0L);
