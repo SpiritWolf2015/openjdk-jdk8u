@@ -979,6 +979,13 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted while waiting
      */
     final boolean acquireQueued(final Node node, int arg) {
+        /*
+        acquireQueued函数返回true后调用selfInterrupt函数的意思可以参考《Java并发编程实战》的7.1.3节-响应中断，
+        对于一些不支持取消但仍可以调用可中断阻塞方法的操作，它们必须在循环中调用这些方法，并在发现中断后重新尝试。在这种情况下，
+        它们应该在本地保存中断状态，并在返回前恢复状态而不是在捕获InterruptedException时恢复状态，如程序清单7-7所示。
+        如果过早地设置中断状态，就可能引起无限循环，因为大多数可中断的阻塞方法都会在入口处检查中断状态，并且当发现该状态已被设
+        置时会立即抛出InterruptedException。（通常，可中断的方法会在阻塞或进行重要的工作前首先检查中断，从而尽快地响应中断）。
+        */
         // 标记是否成功拿到资源
         boolean failed = true;
         try {
@@ -1372,7 +1379,15 @@ public abstract class AbstractQueuedSynchronizer
             旋（for死循环），如果前驱节点是头节点并且当前线程使用钩子方法tryAcquire(arg)获得了锁，就移除头节点(出队)，
             将当前节点设置为头节点。
         */
-        if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
+        if (!tryAcquire(arg) &&
+                acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
+            /*
+            acquireQueued函数返回true后调用selfInterrupt函数的意思可以参考《Java并发编程实战》的7.1.3节-响应中断，
+            对于一些不支持取消但仍可以调用可中断阻塞方法的操作，它们必须在循环中调用这些方法，并在发现中断后重新尝试。在这种情况下，
+            它们应该在本地保存中断状态，并在返回前恢复状态而不是在捕获InterruptedException时恢复状态，如程序清单7-7所示。
+            如果过早地设置中断状态，就可能引起无限循环，因为大多数可中断的阻塞方法都会在入口处检查中断状态，并且当发现该状态已被设
+            置时会立即抛出InterruptedException。（通常，可中断的方法会在阻塞或进行重要的工作前首先检查中断，从而尽快地响应中断）。
+            */
             selfInterrupt();
         }
     }
