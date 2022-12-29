@@ -257,16 +257,31 @@ public class ReentrantReadWriteLock
          * Lock state is logically divided into two unsigned shorts:
          * The lower one representing the exclusive (writer) lock hold count,
          * and the upper the shared (reader) hold count.
+         *    将AQS的state变了拆成两半，低16位用来记录写锁。但同一时间既然只能有一个线程写，
+         * 为什么还需要16位呢？这是因为一个写线程可能多次重入。例如，低16位的值等于5，
+         * 表示一个写线程重入了5次。
+         *    高16位用来记录读锁，高16位的值等于5，可以表示5个读线程都拿到了该读锁；也可以
+         * 表示一个读线程重入了5次。
+         *    之所以要把state变量拆成两半，而不是用两个int变量分别表示读锁和写锁，是因为
+         * 无法用一次CAS同时操作两个int变量，所以用一个变量的高16位和低16位分别表示读锁和
+         * 写锁的状态。
+         *    当state=0时，说明既没有线程持有读锁，也没有线程持有写锁；当state不为0时，
+         * 要么线程持有读锁，要么持有写锁，两者不能同时成立，因为读和写互斥。这时再进一步通过
+         * sharedCount(state)和exclusiveCount(state)判断到底是读线程还是写线程持有了
+         * 该锁。
          */
-
         static final int SHARED_SHIFT   = 16;
         static final int SHARED_UNIT    = (1 << SHARED_SHIFT);
         static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;
         static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
 
-        /** Returns the number of shared holds represented in count  */
+        /** Returns the number of shared holds represented in count.<br>
+         * 持有读锁的线程的重入次数
+         * */
         static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
-        /** Returns the number of exclusive holds represented in count  */
+        /** Returns the number of exclusive holds represented in count.<br>
+         * 持有写锁的线程的重入次数
+         * */
         static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
 
         /**
