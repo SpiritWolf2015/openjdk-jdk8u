@@ -316,10 +316,13 @@ public class ThreadLocal<T> {
          * == null) mean that the key is no longer referenced, so the
          * entry can be expunged from table.  Such entries are referred to
          * as "stale entries" in the code that follows.<br\>
-         * Map的条目类型，静态内部类，继承于WeakReference，Key为ThreadLocal实例
+         * Map的条目类型，静态内部类，继承于WeakReference(弱引用，仅被弱引用所引用的对象在GC时会被回收掉)，Key为ThreadLocal实例，
+         * 即Entry对key对象(ThreadLocal对象)是弱引用，但对value对象(Object对象)是强引用。
          */
         static class Entry extends WeakReference<ThreadLocal<?>> {
-            /** The value associated with this ThreadLocal. */
+            /** The value associated with this ThreadLocal.
+             * 条目的值，注意它是强引用
+             * */
             Object value;
 
             Entry(ThreadLocal<?> k, Object v) {
