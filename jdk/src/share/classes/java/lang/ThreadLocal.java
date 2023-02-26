@@ -68,6 +68,16 @@ import java.util.function.Supplier;
  * thread-local instances are subject to garbage collection (unless other
  * references to these copies exist).
  *
+ * <p>由于Thread中包含变量ThreadLocalMap，因此ThreadLocalMap与Thread的生命周期是一样长，如果都没有手动删除对应key，都会导致内存泄漏。
+ * 但是使用弱引用可以多一层保障：弱引用ThreadLocal不会内存泄漏，对应的value在下一次ThreadLocalMap调用set(),get(),remove()的时候会
+ * 被清除。因此，ThreadLocal内存泄漏的根源是：由于ThreadLocalMap的生命周期跟Thread一样长，如果没有手动删除对应key就会导致内存泄漏，
+ * 而不是因为弱引用。
+ *
+ * <p>避免ThreadLocal内存泄露的使用方法:
+ * <p>1.将ThreadLocal变量定义成private static，这样就一直存在ThreadLocal的强引用，也就能保证任何时候都能通过ThreadLocal的弱引用访问
+ * 到Entry的value值，进而清除掉。
+ * <p>2.每次使用完ThreadLocal都调用它的remove()方法清除数据。
+ *
  * @author  Josh Bloch and Doug Lea
  * @since   1.2
  */
@@ -517,14 +527,18 @@ public class ThreadLocal<T> {
          * Remove the entry for key.
          */
         private void remove(ThreadLocal<?> key) {
+            //使用hash方式，计算当前ThreadLocal变量所在table数组位置
             Entry[] tab = table;
             int len = tab.length;
             int i = key.threadLocalHashCode & (len-1);
+            //再次循环判断是否在为ThreadLocal变量所在table数组位置
             for (Entry e = tab[i];
                  e != null;
                  e = tab[i = nextIndex(i, len)]) {
                 if (e.get() == key) {
+                    //调用WeakReference的clear方法清除对ThreadLocal的弱引用
                     e.clear();
+                    //清理key为null的元素
                     expungeStaleEntry(i);
                     return;
                 }
@@ -620,17 +634,20 @@ public class ThreadLocal<T> {
             int len = tab.length;
 
             // expunge entry at staleSlot
+            // 根据强引用的取消强引用关联规则，将value显式地设置成null，去除引用
             tab[staleSlot].value = null;
             tab[staleSlot] = null;
             size--;
 
             // Rehash until we encounter null
+            // 重新hash，并对table中key为null进行处理
             Entry e;
             int i;
             for (i = nextIndex(staleSlot, len);
                  (e = tab[i]) != null;
                  i = nextIndex(i, len)) {
                 ThreadLocal<?> k = e.get();
+                //对table中key为null进行处理,将value设置为null，清除value的引用
                 if (k == null) {
                     e.value = null;
                     tab[i] = null;
