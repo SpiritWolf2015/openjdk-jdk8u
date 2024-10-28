@@ -1136,6 +1136,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         w.unlock(); // allow interrupts
         boolean completedAbruptly = true;
         try {
+            // 实现线程复用的逻辑主要在一个不停循环的 while 循环体中。
+            // 1.通过取 Worker 的 firstTask 或者通过 getTask 方法从 workQueue 中获取待执行的任务。
+            // 2.直接调用 task 的 run 方法来执行具体的任务（而不是新建线程）。
             while (task != null || (task = getTask()) != null) {
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
@@ -1376,15 +1379,30 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 return;
             c = ctl.get();
         }
+
+        // 如果代码执行到这里，说明当前线程数大于或等于核心线程数或者 addWorker 失败了，
+        // 那么就需要通过 if (isRunning© && workQueue.offer(command)) 检查线程池状态是否为 Running，
+        // 如果线程池状态是 Running 就把任务放入任务队列中，也就是 workQueue.offer(command)。
+        // 如果线程池已经不处于 Running 状态，说明线程池被关闭，那么就移除刚刚添加到任务队列中的任务，并执行拒绝策略。
         if (isRunning(c) && workQueue.offer(command)) {
             int recheck = ctl.get();
-            if (! isRunning(recheck) && remove(command))
+            if (!isRunning(recheck) && remove(command)) {
                 reject(command);
-            else if (workerCountOf(recheck) == 0)
+            } else if (workerCountOf(recheck) == 0) {
+                // 能进入这个 else 说明前面判断到线程池状态为 Running，那么当任务被添加进来之后就需要
+                // 防止没有可执行线程的情况发生（比如之前的线程被回收了或意外终止了），所以此时如果检查当前线程数为 0，
+                // 也就是 workerCountOf(recheck**) == 0，那就执行 addWorker() 方法新建线程。
                 addWorker(null, false);
-        }
-        else if (!addWorker(command, false))
+            }
+        } else if (!addWorker(command, false)) {
+            // 执行到这里，说明线程池不是 Running 状态或线程数大于或等于核心线程数并且任务队列已经满了，根据规则，
+            // 此时需要添加新线程，直到线程数达到“最大线程数”，所以此时就会再次调用 addWorker 方法并将第二个参数传入 false，
+            // 传入 false 代表增加线程时判断当前线程数是否少于 maxPoolSize，小于则增加新线程，大于等于则不增加，
+            // 也就是以 maxPoolSize 为上限创建新的 worker；addWorker 方法如果返回 true 代表添加成功，
+            // 如果返回 false 代表任务添加失败，说明当前线程数已经达到 maxPoolSize，然后执行拒绝策略 reject 方法。
+            // 如果执行到这里线程池的状态不是 Running，那么 addWorker 会失败并返回 false，所以也会执行拒绝策略 reject 方法。
             reject(command);
+        }
     }
 
     /**
