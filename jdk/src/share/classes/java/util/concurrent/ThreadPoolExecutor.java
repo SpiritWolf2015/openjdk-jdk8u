@@ -882,7 +882,12 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * factory fails to create a thread when asked.  If the thread
      * creation fails, either due to the thread factory returning
      * null, or due to an exception (typically OutOfMemoryError in
-     * Thread.start()), we roll back cleanly.
+     * Thread.start()), we roll back cleanly.<br>
+     * addWorker 方法的主要作用是在线程池中创建一个线程并执行第一个参数传入的任务，
+     * 它的第二个参数是个布尔值，如果布尔值传入 true 代表增加线程时判断当前线程是否少于 corePoolSize，
+     * 小于则增加新线程，大于等于则不增加；同理，如果传入 false 代表增加线程时判断当前线程是否少于 maxPoolSize，
+     * 小于则增加新线程，大于等于则不增加。<br>
+     * addWorker() 方法如果返回 true 代表添加成功，如果返回 false 代表添加失败。<br>
      *
      * @param firstTask the task the new thread should run first (or
      * null if none). Workers are created with an initial first task
@@ -1363,7 +1368,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          * and so reject the task.
          */
         int c = ctl.get();
+        // 判断当前线程数是否小于核心线程数，如果小于核心线程数就调用 addWorker() 方法增加
+        // 一个Worker，这里的Worker就可以理解为一个工作线程。
         if (workerCountOf(c) < corePoolSize) {
+            // addWorker()这里的布尔值的含义是以核心线程数为界限还是以最大线程数为界限进行是否新增线程的判断。
             if (addWorker(command, true))
                 return;
             c = ctl.get();
