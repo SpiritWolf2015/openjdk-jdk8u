@@ -693,6 +693,10 @@ public class ReentrantReadWriteLock
      */
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = -8159625535654395037L;
+        /**
+         * 在 writerShouldBlock() 这个方法中始终返回 false，可以看出，对于想获取写锁的线程而言，由于返回值是 false，
+         * 所以它是随时可以插队的，这就和我们的 ReentrantLock 的设计思想是一样的，但是读锁却不一样。
+         */
         final boolean writerShouldBlock() {
             return false; // writers can always barge
         }
@@ -704,6 +708,10 @@ public class ReentrantReadWriteLock
              * block if there is a waiting writer behind other enabled
              * readers that have not yet drained from the queue.
              */
+            /*
+             * 即便是非公平锁，只要抢锁等待队列的第1个等待的结点(注意它是队列的第2个节点)是尝试获取写锁的线程，那么后来的抢读锁线程依然是不能插队的，
+             * 也得进入抢锁队列阻塞等待，这样做的目的是避免抢写锁线程“饥饿”。
+             */
             return apparentlyFirstQueuedIsExclusive();
         }
     }
@@ -713,6 +721,10 @@ public class ReentrantReadWriteLock
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -2274990926593161451L;
+        /**
+         * 在公平锁的情况下，只要等待队列中有线程在等待，也就是 hasQueuedPredecessors() 返回 true 的时候，
+         * 那么 writer 和 reader 都会 block，也就是一律不允许插队，都乖乖去排队。
+         */
         final boolean writerShouldBlock() {
             return hasQueuedPredecessors();
         }
