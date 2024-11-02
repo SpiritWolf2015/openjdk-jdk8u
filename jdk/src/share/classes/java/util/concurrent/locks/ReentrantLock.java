@@ -133,7 +133,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             if (c == 0) {
                 // 如果内部队列首节点的线程执行完了，它会将锁的state设置为0
                 // 当前抢锁线程的下一步就是直接进行抢占，不管不顾
-                // 发现state是空的，就直接拿来加锁使用，根本不考虑后继节点的存在
+                // 发现state是空的，就直接拿来加锁使用，根本不考虑后继节点的存在。
+                // 与公平锁tryAcquire(int)相比这里没有判断hasQueuedPredecessors()，因为当前线程是抢锁线程，直接CAS成功后抢占即可，忽略抢锁队列里还在等待的线程。
                 if (compareAndSetState(0, acquires)) {
                     // 1. 利用CAS自旋方式判断当前state确实为0，然后设置成acquire（1）
                     // 这是原子性的操作，可以保证线程安全
@@ -267,11 +268,15 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             int c = getState();
             // 还没有线程占有锁
             if (c == 0) {
-                // 当前线程等待获取的时间比任何线程都长，并且CAS成功
+                // 当前线程等待获取的时间比任何线程都长，并且CAS成功。
+                // 与非公平锁nonfairTryAcquire()相比，多了一个判断条件hasQueuedPredecessors()，即判断当前线程是否是抢锁队列中的第一个线程。
                 if (!hasQueuedPredecessors() &&
                         compareAndSetState(0, acquires)) {
                     // 抢锁成功，设置当前线程为占有锁的线程
                     setExclusiveOwnerThread(current);
+                    // 总结：公平锁与非公平锁的 lock() 方法唯一的区别就在于公平锁在获取锁时多了一个限制条件：hasQueuedPredecessors() 为 false，
+                    // 这个方法就是判断在等待队列中是否已经有线程在排队了。这也就是公平锁和非公平锁的核心区别，如果是公平锁，那么一旦已经有线程在排队了，
+                    // 当前线程就不再尝试获取锁；对于非公平锁而言，无论是否已经有线程在排队，都会尝试获取一下锁，获取不到的话，再去排队。
                     return true;
                 }
             } else if (current == getExclusiveOwnerThread()) {
@@ -375,6 +380,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     }
 
     /**
+     * 当有线程执行 tryLock() 方法的时候，一旦有线程释放了锁，那么这个正在 tryLock 的线程就能获取到锁，即使设置的是公平锁模式，
+     * 即使在它之前已经有其他正在等待队列中等待的线程，简单地说就是 tryLock 可以插队，它一定是非公平的。<br>
      * Acquires the lock only if it is not held by another thread at the time
      * of invocation.
      *
@@ -401,6 +408,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      *         thread; and {@code false} otherwise
      */
     public boolean tryLock() {
+        // 调用的是 nonfairTryAcquire()，表明了是不公平的，和锁本身是否是公平锁无关
         return sync.nonfairTryAcquire(1);
     }
 
