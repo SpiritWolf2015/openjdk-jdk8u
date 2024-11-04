@@ -1089,7 +1089,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         return putVal(key, value, false);
     }
 
-    /** Implementation for put and putIfAbsent */
+    /**
+     * Implementation for put and putIfAbsent.<br>
+     * putVal方法中会逐步根据当前槽点是未初始化、空、扩容、链表、红黑树等不同情况做出不同的处理。
+     */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
         // 对key的hashCode进行散列
@@ -1099,8 +1102,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // 一个无限循环，直到put操作完成后退出循环
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
+            // 如果数组是空的，则初始化数组
             if (tab == null || (n = tab.length) == 0) {
-                // 延时初始化node数组,此时是会有并发问题的，如果多个线程同时调用initTable初始化Node数组怎么办？CAS自选处理
+                // 延时初始化node数组，此时是会有并发问题的，如果多个线程同时调用initTable初始化Node数组怎么办？CAS自旋处理
                 tab = initTable();
                 // Unsafe类volatile的方式取出hashCode散列后通过与运算得出的Node数组下标值对应的Node对象
                 // 此时的Node对象若为空，则代表还未有线程对此Node进行插入操作
@@ -1110,8 +1114,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     // 插入成功，退出循环
                     break; // no lock when adding to empty bin
                 }
-            } else if ((fh = f.hash) == MOVED) { // 查看是否在扩容
-                // 帮助扩容
+            } else if ((fh = f.hash) == MOVED) { // 查看hash值是否等于在扩容
+                // 多线程帮助扩容
                 tab = helpTransfer(tab, f);
             } else {
                 V oldVal = null;
@@ -1119,12 +1123,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 synchronized (f) {
                     // 二次确认此Node对象还是原来的那一个
                     if (tabAt(tab, i) == f) {
+                        // 如果是链表的形式
                         if (fh >= 0) {
                             binCount = 1;
                             // 无限循环，直到完成put
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
                                 // 和HashMap一样，先比较hash，再比较equals
+                                // 如果发现该key已存在，就判断是否需要进行覆盖，然后返回
                                 if (e.hash == hash &&
                                         ((ek = e.key) == key ||
                                         (ek != null && key.equals(ek)))) {
@@ -1134,15 +1140,16 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     break;
                                 }
                                 Node<K,V> pred = e;
+                                // 到了链表尾部也没有发现该key，说明之前不存在，就直接插入新Node对象
                                 if ((e = e.next) == null) {
-                                    // 和链表头Node节点不冲突，就将其初始化为新Node作为上一个Node节点的next形成链表结构
                                     pred.next = new Node<K,V>(hash, key, value, null);
                                     break;
                                 }
                             }
-                        } else if (f instanceof TreeBin) {
+                        } else if (f instanceof TreeBin) { // 如果是红黑树的形式
                             Node<K,V> p;
                             binCount = 2;
+                            // 调用putTreeVal方法往红黑树里增加数据
                             if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key, value)) != null) {
                                 oldVal = p.val;
                                 if (!onlyIfAbsent)
@@ -1157,8 +1164,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         // 将链表转换为红黑树，增加查找效率
                         treeifyBin(tab, i);
                     }
-                    if (oldVal != null)
+                    if (oldVal != null) {
+                        // putVal 的返回是添加前的旧值，所以返回 oldVal
                         return oldVal;
+                    }
                     break;
                 }
             }
@@ -2939,7 +2948,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * keys or values, but instead point to list of TreeNodes and
      * their root. They also maintain a parasitic read-write lock
      * forcing writers (who hold bin lock) to wait for readers (who do
-     * not) to complete before tree restructuring operations.
+     * not) to complete before tree restructuring operations.<br>
+     * 红黑树
      */
     static final class TreeBin<K,V> extends Node<K,V> {
         TreeNode<K,V> root;
