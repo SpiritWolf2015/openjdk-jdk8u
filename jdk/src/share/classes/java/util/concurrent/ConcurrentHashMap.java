@@ -1010,27 +1010,41 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * @throws NullPointerException if the specified key is null
      */
     public V get(Object key) {
+        /*
+        总结一下 get 的过程：
+            1.计算 Hash 值，并由此值找到对应的槽点；
+            2.如果数组是空的或者该位置为 null，那么直接返回 null 就可以了；
+            3.如果该位置处的节点刚好就是我们需要的，直接返回该节点的值；
+            4.如果该位置节点是红黑树或者正在扩容，就用 find 方法继续查找；
+            5.否则那就是链表，就进行遍历链表查找。
+        */
         // 假设Node下标为16的Node节点正在迁移，突然有一个线程进来调用get方法，正好key又散列到下标为16的节点，此时怎么办？
         Node<K,V>[] tab; Node<K,V> e, p; int n, eh; K ek;
+        // 计算 hash 值
         int h = spread(key.hashCode());
 
         // 此过程与HashMap的get操作无异，不多赘述
         if ((tab = table) != null && (n = tab.length) > 0 &&
                 (e = tabAt(tab, (n - 1) & h)) != null) {
+            // 判断头结点是否就是我们需要的节点，如果是则直接返回
             if ((eh = e.hash) == h) {
-                if ((ek = e.key) == key || (ek != null && key.equals(ek)))
+                if ((ek = e.key) == key || (ek != null && key.equals(ek))) {
                     return e.val;
-            } else if (eh < 0) {
-                // 假如Node节点的hash值小于0,则有可能是fwd占位节点
-                // 调用节点对象的find方法去查找新table中的数据
+                }
+            } else if (eh < 0) { // 如果头结点 hash 值小于 0，说明是红黑树或者正在扩容，就用对应的 find 方法来查找
+                // 假如Node节点的hash值小于0，则有可能是fwd占位节点，调用节点对象的find方法去查找新table中的数据
                 return (p = e.find(h, key)) != null ? p.val : null;
             }
+
+            // 剩下的情况只可能是链表，遍历链表来查找
             while ((e = e.next) != null) {
                 if (e.hash == h &&
-                    ((ek = e.key) == key || (ek != null && key.equals(ek))))
+                    ((ek = e.key) == key || (ek != null && key.equals(ek)))) {
                     return e.val;
+                }
             }
         }
+        // 如果整个数组是空的，或者当前槽点的数据是空的，说明 key 对应的 value 不存在，直接返回 null
         return null;
     }
 
