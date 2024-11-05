@@ -259,6 +259,24 @@ import java.util.stream.Stream;
  * <a href="{@docRoot}/../technotes/guides/collections/index.html">
  * Java Collections Framework</a>.
  *
+ * <br>
+ * 总结Java7 与 Java8 的 ConcurrentHashMap 的并发特性对比：<br>
+ * 1.并发度<br>
+ * Java 7 中，每个 Segment 独立加锁，最大并发个数就是 Segment 的个数，默认是 16。<br>
+ * 但是到了 Java 8 中，锁粒度更细，理想情况下 table 数组元素的个数（也就是数组长度）就是其支持并发的最大个数，并发度比之前有提高。<br>
+ * <br>
+ * 2.保证并发安全的原理<br>
+ * Java 7 采用 Segment 分段锁来保证安全，而 Segment 是继承自 ReentrantLock。<br>
+ * Java 8 中放弃了 Segment 的设计，采用 Node + CAS + synchronized 保证线程安全，参考{@link ConcurrentHashMap#putVal(K,V,boolean)}方法的源码。<br>
+ * <br>
+ * 3.遇到 Hash 碰撞<br>
+ * Java 7 在 Hash 冲突时，会使用拉链法，也就是链表的形式。<br>
+ * Java 8 先使用拉链法，在链表长度超过一定阈值时，将链表转换为红黑树，来提高查找效率。<br>
+ * <br>
+ * 4.查询时间复杂度<br>
+ * Java 7 遍历链表的时间复杂度是 O(n)，n 为链表长度。<br>
+ * Java 8 如果变成遍历红黑树，那么时间复杂度降低为 O(log(n))，n 为树的节点个数。<br>
+ *
  * @since 1.5
  * @author Doug Lea
  * @param <K> the type of keys maintained by this map
