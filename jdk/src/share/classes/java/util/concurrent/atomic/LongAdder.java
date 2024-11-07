@@ -62,7 +62,19 @@ import java.io.Serializable;
  * <p>This class extends {@link Number}, but does <em>not</em> define
  * methods such as {@code equals}, {@code hashCode} and {@code
  * compareTo} because instances are expected to be mutated, and so are
- * not useful as collection keys.
+ * not useful as collection keys.<br>
+ *
+ * 1.如何选择LongAdder/AtomicLong？<br>
+ * 在低竞争的情况下，AtomicLong 和 LongAdder 这两个类具有相似的特征，吞吐量也是相似的，因为竞争不高。
+ * 但是在竞争激烈的情况下，LongAdder 的预期吞吐量要高得多，经过试验，LongAdder 的吞吐量大约是 AtomicLong 的十倍，
+ * 不过凡事总要付出代价，LongAdder 在保证高效的同时，也需要消耗更多的空间。<br>
+ *
+ * 2.AtomicLong 可否被 LongAdder 替代？<br>
+ * 那么我们就要考虑了，有了更高效的 LongAdder，那 AtomicLong 可否不使用了呢？是否凡是用到 AtomicLong 的地方，
+ * 都可以用 LongAdder 替换掉呢？答案是不是的，这需要区分场景。
+ * LongAdder 只提供了 add、increment 等简单的方法，适合的是统计求和计数的场景，场景比较单一，而 AtomicLong 还具有 compareAndSet 等高级方法，
+ * 可以应对除了加减之外的更复杂的需要 CAS 的场景。<br>
+ * 结论：如果我们的场景仅仅是需要用到加和减操作的话，那么可以直接使用更高效的 LongAdder，但如果我们需要利用 CAS 比如 compareAndSet 等操作的话，就需要使用 AtomicLong 来完成。
  *
  * @since 1.8
  * @author Doug Lea
@@ -126,7 +138,8 @@ public class LongAdder extends Striped64 implements Serializable {
      * updates returns an accurate result, but concurrent updates that
      * occur while the sum is being calculated might not be
      * incorporated.<br/>
-     * 将cells数组中的多个值加起来的和就类似于AtomicLong中的value
+     * 将cells数组中的多个值加起来的和就类似于AtomicLong中的value。
+     * 由于在统计的时候并没有进行加锁操作，所以这里得出的 sum 不一定是完全准确的，因为有可能在计算 sum 的过程中 Cell 的值被修改了。
      *
      * @return the sum
      */
