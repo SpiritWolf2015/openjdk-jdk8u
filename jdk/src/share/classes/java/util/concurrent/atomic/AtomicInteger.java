@@ -54,6 +54,12 @@ import sun.misc.Unsafe;
 public class AtomicInteger extends Number implements java.io.Serializable {
     private static final long serialVersionUID = 6214790243416807050L;
 
+    /*
+    在数据定义的部分，首先还获取了 Unsafe 实例，并且定义了 valueOffset。我们往下看到 static 代码块，
+    这个代码块会在类加载的时候执行，执行时我们会调用 Unsafe 的 objectFieldOffset 方法，从而得到当前这个原子类的 value 的偏移量，
+    并且赋给 valueOffset 变量，这样一来我们就获取到了 value 的偏移量，它的含义是在内存中的偏移地址，
+    因为 Unsafe 就是根据内存偏移地址获取数据的原值的，这样我们就能通过 Unsafe 来实现 CAS 了。
+    */
     // setup to use Unsafe.compareAndSwapInt for updates
     private static final Unsafe unsafe = Unsafe.getUnsafe();
     private static final long valueOffset;
@@ -65,6 +71,7 @@ public class AtomicInteger extends Number implements java.io.Serializable {
         } catch (Exception ex) { throw new Error(ex); }
     }
 
+    // 由volatile修饰，保证可见性
     private volatile int value;
 
     /**

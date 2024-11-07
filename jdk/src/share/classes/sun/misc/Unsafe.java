@@ -1029,10 +1029,18 @@ public final class Unsafe {
      * @since 1.8
      */
     public final int getAndAddInt(Object o, long offset, int delta) {
+        /*
+        通过循环 + CAS 的方式来实现的，在此过程中，它会通过 compareAndSwapInt 方法来尝试更新 volatile 字段的值，
+        如果更新失败就重新获取，然后再次尝试更新，直到更新成功。
+        如果操作失败就意味着在获取到 volatile字段之后，并且在 CAS 操作之前，volatile 字段的数值已经发生变化了，
+        证明有其他线程修改过这个变量。
+        */
         int v;
         do {
+            // 获取当前 volatile 字段的值
             v = getIntVolatile(o, offset);
-        } while (!compareAndSwapInt(o, offset, v, v + delta));
+        } while (!compareAndSwapInt(o, offset, v, v + delta)); // CAS 操作
+        // 执行到此处，说明已经成功更新了，返回旧值
         return v;
     }
 
