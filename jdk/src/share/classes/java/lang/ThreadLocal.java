@@ -315,7 +315,17 @@ public class ThreadLocal<T> {
      * very large and long-lived usages, the hash table entries use
      * WeakReferences for keys. However, since reference queues are not
      * used, stale entries are guaranteed to be removed only when
-     * the table starts running out of space.
+     * the table starts running out of space.<br>
+     *
+     * ThreadLocalMap 类是每个线程 Thread 类里面的一个成员变量，其中最重要的就是 Entry 内部类。
+     * 在 ThreadLocalMap 中会有一个 Entry 类型的数组，名字叫 table。我们可以把 Entry 理解为一个 map，其键值对为：
+     * 键，当前的 ThreadLocal；值，实际需要存储的变量，比如 user 用户对象或者 simpleDateFormat 对象等。<br>
+     *
+     * ThreadLocalMap 既然类似于 Map，所以就和 HashMap 一样，也会有包括 set、get、rehash、resize 等一系列标准操作。
+     * 但是，虽然思路和 HashMap 是类似的，但是具体实现会有一些不同。比如其中一个不同点就是，我们知道 HashMap 在面对 hash 冲突的时候，
+     * 采用的是拉链法。它会先把对象 hash 到一个对应的格子中，如果有冲突就用链表的形式往下链，
+     * 但是 ThreadLocalMap 解决 hash 冲突的方式是不一样的，它采用的是线性探测法。如果发生冲突，并不会用链表的形式往下链，
+     * 而是会继续寻找下一个空的格子。这是 ThreadLocalMap 和 HashMap 在处理冲突时不一样的点。
      */
     static class ThreadLocalMap {
 
@@ -325,7 +335,8 @@ public class ThreadLocal<T> {
          * ThreadLocal object).  Note that null keys (i.e. entry.get()
          * == null) mean that the key is no longer referenced, so the
          * entry can be expunged from table.  Such entries are referred to
-         * as "stale entries" in the code that follows.<br\>
+         * as "stale entries" in the code that follows.<br>
+         *
          * Map的条目类型，静态内部类，继承于WeakReference(弱引用，仅被弱引用所引用的对象在GC时会被回收掉)，Key为ThreadLocal实例，
          * 即Entry对key对象(ThreadLocal对象)是弱引用，但对value对象(Object对象)是强引用。
          */
