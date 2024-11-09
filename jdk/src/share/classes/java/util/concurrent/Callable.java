@@ -57,7 +57,18 @@ package java.util.concurrent;
 @FunctionalInterface
 public interface Callable<V> {
     /**
-     * Computes a result, or throws an exception if unable to do so.
+     * Computes a result, or throws an exception if unable to do so.<br>
+     * 可以看出Callable也是一个 interface，并且它的 call 方法中已经声明了 throws Exception，前面还有一个 V 泛型的返回值，
+     * 这就和之前的 Runnable 有很大的区别。实现 Callable 接口，就要实现 call 方法，这个方法的返回值是泛型 V，
+     * 如果把 call 中计算得到的结果放到这个对象中，就可以利用 call 方法的返回值来获得子线程的执行结果了。<br>
+     * <br>
+     *
+     * 总结一下 Callable 和 Runnable 的不同之处：<br>
+     *     1.方法名，Callable 规定的执行方法是 call()，而 Runnable 规定的执行方法是 run()；<br>
+     *     2.返回值，Callable 的任务执行后有返回值，而 Runnable 的任务执行后是没有返回值的；<br>
+     *     3.抛出异常，call() 方法可抛出异常，而 run() 方法是不能抛出受检查异常的；<br>
+     *     4.和 Callable 配合的有一个 Future 类，通过 Future 可以了解任务执行情况，或者取消任务的执行，还可获取任务执行的结果，
+     *     这些功能都是 Runnable 做不到的，Callable 的功能要比 Runnable 强大。
      *
      * @return computed result
      * @throws Exception if unable to compute a result

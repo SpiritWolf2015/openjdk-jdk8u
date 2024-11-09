@@ -61,7 +61,11 @@ public interface Runnable {
      * thread.
      * <p>
      * The general contract of the method <code>run</code> is that it may
-     * take any action whatsoever.
+     * take any action whatsoever.<br>
+     *
+     * Runnable 是一个 interface，并且里面只有一个方法，叫作 public abstract void run()。
+     * 这个方法已经规定了 run() 方法的返回类型是 void，而且这个方法没有声明抛出任何异常。所以，当实现并重写这个方法时，
+     * 我们既不能改返回值类型，也不能更改对于异常抛出的描述，因为在实现方法的时候，语法规定是不允许对这些内容进行修改的。
      *
      * @see     java.lang.Thread#run()
      */
