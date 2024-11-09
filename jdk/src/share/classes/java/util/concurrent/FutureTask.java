@@ -54,7 +54,12 @@ import java.util.concurrent.locks.LockSupport;
  *
  * <p>In addition to serving as a standalone class, this class provides
  * {@code protected} functionality that may be useful when creating
- * customized task classes.
+ * customized task classes.<br>
+ * <br>
+ * 既然 RunnableFuture 继承了 Runnable 接口和 Future 接口，而 FutureTask 又实现了 RunnableFuture 接口，
+ * 所以 FutureTask 既可以作为 Runnable 被线程执行，又可以作为 Future 得到 Callable 的返回值。<br>
+ * 典型用法是，把 Callable 实例当作 FutureTask 构造函数的参数，生成 FutureTask 的对象，然后把这个对象当作一个 Runnable 对象，
+ * 放到线程池中或另起线程去执行，最后还可以通过 FutureTask 获取任务执行的结果。
  *
  * @since 1.5
  * @author Doug Lea
